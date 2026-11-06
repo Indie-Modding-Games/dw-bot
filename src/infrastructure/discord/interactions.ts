@@ -1,15 +1,20 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { Logger } from 'pino';
 import { canInteract, type AuthorizationConfig } from '../../application/authorization.js';
+import { handleFeedbackReport } from '../../application/handlers/feedback.js';
 import { handleHelp } from '../../application/handlers/help.js';
 import { handleStatus } from '../../application/handlers/status.js';
 import type { BotStatus, CommandContext } from '../../application/handlers/types.js';
+import type { FeedbackService } from '../../application/services/feedback.service.js';
+import type { FeedbackKind } from '../../core/feedback/types.js';
 
 export interface RouterDependencies {
   authorization: AuthorizationConfig;
   logger: Logger;
   /** El adaptador extrae el estado del cliente y lo pasa al caso de uso. */
   getBotStatus: () => BotStatus;
+  /** Devuelve el servicio de feedback o null si no esta configurado. */
+  getFeedback: () => FeedbackService | null;
 }
 
 function toContext(interaction: ChatInputCommandInteraction): CommandContext {
@@ -65,6 +70,19 @@ export async function routeInteraction(
       case 'status':
         await handleStatus(ctx, deps.getBotStatus());
         break;
+      case 'bug':
+      case 'suggest': {
+        const kind: FeedbackKind = interaction.commandName === 'bug' ? 'bug' : 'suggestion';
+        const title = interaction.options.getString('title', true);
+        const description = interaction.options.getString('description', true);
+        await handleFeedbackReport(
+          ctx,
+          kind,
+          { title, description },
+          { service: deps.getFeedback(), logger },
+        );
+        break;
+      }
       default:
         await ctx.reply('Comando no reconocido.', { ephemeral: true });
     }

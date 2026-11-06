@@ -6,11 +6,16 @@ export async function handleHelp(ctx: CommandContext): Promise<void> {
     [
       '**DevBot - Ayuda**',
       '',
-      'Comandos disponibles en esta version (Iteracion 1):',
+      'Comandos disponibles:',
       '`/help` - Muestra esta ayuda.',
       '`/status` - Estado del bot y de la conexion con Discord.',
+      '`/bug title description` - Reporta un bug al backlog de GitHub.',
+      '`/suggest title description` - Propone una mejora al backlog de GitHub.',
       '',
-      'Proximas iteraciones: `/projects`, `/tasks`, `/run`, `/history`, programaciones y notificaciones.',
+      'Los reportes se registran como issues en GitHub y su ficha en el canal',
+      'de backlog se actualiza automaticamente cuando cambia el estado.',
+      '',
+      'Proximas iteraciones: `/projects`, `/tasks`, `/run`, `/history`.',
     ].join('\n'),
     { ephemeral: true },
   );

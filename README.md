@@ -4,9 +4,12 @@ Herramienta personal de automatización para desarrollo de software.
 Interfaz inicial: **bot privado de Discord**. Ver
 `DevBot-MVP-Architecture.md` para la especificación completa.
 
-**Estado actual: Iteración 1** — bot de Discord tipado, autenticado, con
-allowlist, slash commands (`/help`, `/status`) y logging estructurado.
-Sin motor de ejecución, scheduler ni base de datos todavía.
+**Estado actual: Iteración 1 + módulo de feedback** — bot de Discord tipado,
+autenticado, con allowlist, slash commands (`/help`, `/status`, `/bug`,
+`suggest`) y logging estructurado. `/bug` y `/suggest` registran issues en un
+backlog de GitHub con ficha sincronizada en Discord (requiere credenciales;
+si faltan, el módulo se deshabilita con aviso). Sin motor de ejecución ni
+base de datos todavía.
 
 ## Requisitos
 
@@ -21,10 +24,10 @@ Sin motor de ejecución, scheduler ni base de datos todavía.
 3. Copia el **Application ID** (General Information).
 4. En tu servidor de pruebas, invita el bot con scopes `bot` y
    `applications.commands` y permisos mínimos
-   (View Channels + Send Messages):
+   (View Channels + Send Messages + Embed Links, para las fichas del backlog):
 
    ```
-   https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=3072
+   https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=19456
    ```
 
 5. Copia `.env.example` a `.env` y complétalo. Activar la allowlist es
@@ -61,6 +64,42 @@ src/
 └── index.ts            # composition root
 tests/                  # unitarias e integración (Vitest)
 ```
+
+## Sugerencias y bugs → backlog de GitHub (extensión)
+
+Comandos `/bug` y `/suggest` crean issues en un repo de GitHub (labels
+configurables) y publican una **ficha tipo embed en el canal de backlog**.
+Un sondeo periódico (`node-cron`, por defecto cada 5 min) detecta cambios
+en GitHub: la ficha se **edita** en el canal y se **avisa** con un mensaje
+cuando una issue se cierra, se reabre o cambia su motivo de cierre.
+
+```
+Discord (/bug, /suggest) → FeedbackService → GitHub API (issues)
+                                        └→ ficha embed en canal backlog
+GitHub (estados/etiquetas) → scheduler poll → editar ficha + notificar
+```
+
+Requisitos: `DEVBOT_GITHUB_TOKEN` (issues read/write), `DEVBOT_GITHUB_REPO`
+(`owner/repo`) y `DEVBOT_FEEDBACK_CHANNEL_ID`. **Si faltan, el módulo queda
+deshabilitado con aviso en el arranque y el bot sigue operativo** — credenciales
+pendientes para una pasada posterior.
+
+El bot necesita en el canal de backlog: View Channel, Send Messages y
+**Embed Links**. Actualiza el link de invitación a `permissions=19456`:
+
+```
+https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=19456
+```
+
+El seguimiento vive en `data/feedback.json` (resiste reinicios).
+
+### Pendientes para más adelante
+
+- Completar credenciales de GitHub y canal de backlog en `.env`.
+- Migrar el estado de JSON a SQLite (Iteración 2 del plan).
+- Webhook de GitHub en lugar de polling si el bot se expone públicamente.
+- Permitir enlazar issues existentes (`/bug link:#123`) y sincronizar issues
+  creadas fuera del bot.
 
 ## Roadmap del MVP (§14)
 

@@ -20,6 +20,31 @@ const csvIds = z
     'Los IDs deben ser cadenas numericas (snowflakes de Discord) separadas por comas',
   );
 
+/** Convierte string vacio de .env en undefined y aplica el schema opcional. */
+function optionalValue<T extends z.ZodType>(schema: T) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema.optional(),
+  );
+}
+
+const snowflake = z.string().regex(/^\d{1,20}$/, 'debe ser un snowflake numerico');
+
+const labelCsv = (fallback: string) =>
+  z
+    .string()
+    .default(fallback)
+    .transform((value) =>
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    )
+    .refine(
+      (list) => list.every((label) => /^[\w][\w./-]{0,49}$/.test(label)),
+      'Las etiquetas de GitHub deben ser alfanumericas (separadas por comas)',
+    );
+
 const envSchema = z.object({
   DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN es obligatorio'),
   DISCORD_APPLICATION_ID: z
@@ -53,6 +78,20 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((value) => value === '1'),
+
+  // --- Modulo de feedback GitHub/Discord ---
+  // Credenciales opcionales: si falta alguna, el modulo queda deshabilitado
+  // con un aviso claro (los comandos /bug y /suggest responden que no esta
+  // configurado) y el resto del bot sigue funcionando.
+  DEVBOT_GITHUB_TOKEN: optionalValue(z.string().min(1)),
+  DEVBOT_GITHUB_REPO: optionalValue(
+    z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'DEVBOT_GITHUB_REPO debe tener formato owner/repo'),
+  ),
+  DEVBOT_FEEDBACK_CHANNEL_ID: optionalValue(snowflake),
+  DEVBOT_FEEDBACK_CRON: z.string().min(1).default('*/5 * * * *'),
+  DEVBOT_BUG_LABELS: labelCsv('bug'),
+  DEVBOT_SUGGESTION_LABELS: labelCsv('enhancement'),
+  DEVBOT_DATA_DIR: optionalValue(z.string().min(1)),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -75,7 +114,61 @@ export interface AppConfig {
   notificationChannelId?: string;
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   prettyLogs: boolean;
+  /** Definida solo cuando hay config completa de GitHub/Discord backlog. */
+  feedback?: FeedbackConfig;
+  /** Variables que faltan cuando la config de feedback esta parcial. */
+  feedbackMissing: string[];
 }
+
+export interface FeedbackConfig {
+  githubToken: string;
+  /** owner/repo del backlog de GitHub. */
+  repo: string;
+  /** Canal de Discord donde se publican y actualizan las fichas. */
+  backlogChannelId: string;
+  bugLabels: string[];
+  suggestionLabels: string[];
+  syncCron: string;
+  dataDir: string;
+}
+
+function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
+  feedback?: FeedbackConfig;
+  feedbackMissing: string[];
+} {
+  const token = data.DEVBOT_GITHUB_TOKEN;
+  const repo = data.DEVBOT_GITHUB_REPO;
+  const channelId = data.DEVBOT_FEEDBACK_CHANNEL_ID;
+
+  // Config completa -> modulo activo.
+  if (token && repo && channelId) {
+    return {
+      feedback: {
+        githubToken: token,
+        repo,
+        backlogChannelId: channelId,
+        bugLabels: data.DEVBOT_BUG_LABELS,
+        suggestionLabels: data.DEVBOT_SUGGESTION_LABELS,
+        syncCron: data.DEVBOT_FEEDBACK_CRON,
+        dataDir: data.DEVBOT_DATA_DIR ?? 'data',
+      },
+      feedbackMissing: [],
+    };
+  }
+
+  const required: Array<{ name: string; value: string | undefined }> = [
+    { name: 'DEVBOT_GITHUB_TOKEN', value: token },
+    { name: 'DEVBOT_GITHUB_REPO', value: repo },
+    { name: 'DEVBOT_FEEDBACK_CHANNEL_ID', value: channelId },
+  ];
+  const missing = required.filter((entry) => !entry.value).map((entry) => entry.name);
+
+  // Parcial -> se avisa en el arranque que faltan credenciales (detalles
+  // pendientes para una proxima pasada). Sin ninguna -> modulo no configurado.
+  return { feedbackMissing: missing.length < required.length ? missing : [] };
+}
+
+const feedbackState = buildFeedbackConfig(parsed.data);
 
 export const config: AppConfig = {
   discordToken: parsed.data.DISCORD_TOKEN,
@@ -86,4 +179,6 @@ export const config: AppConfig = {
   notificationChannelId: parsed.data.DEVBOT_NOTIFICATION_CHANNEL_ID,
   logLevel: parsed.data.DEVBOT_LOG_LEVEL,
   prettyLogs: parsed.data.DEVBOT_PRETTY_LOGS,
+  feedback: feedbackState.feedback,
+  feedbackMissing: feedbackState.feedbackMissing,
 };

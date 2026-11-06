@@ -11,6 +11,42 @@ export const slashCommands = [
   new SlashCommandBuilder()
     .setName('status')
     .setDescription('Muestra el estado del bot y de la conexion con Discord.'),
+
+  new SlashCommandBuilder()
+    .setName('bug')
+    .setDescription('Reporta un bug al backlog de GitHub.')
+    .addStringOption((option) =>
+      option
+        .setName('title')
+        .setDescription('Titulo breve del bug')
+        .setRequired(true)
+        .setMaxLength(255),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('description')
+        .setDescription('Que paso, como reproducirlo y que esperabas')
+        .setRequired(true)
+        .setMaxLength(3500),
+    ),
+
+  new SlashCommandBuilder()
+    .setName('suggest')
+    .setDescription('Propone una mejora al backlog de GitHub.')
+    .addStringOption((option) =>
+      option
+        .setName('title')
+        .setDescription('Titulo breve de la sugerencia')
+        .setRequired(true)
+        .setMaxLength(255),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('description')
+        .setDescription('Que mejoraria y por que')
+        .setRequired(true)
+        .setMaxLength(3500),
+    ),
 ];
 
 /** Version serializada para el registro via REST. */

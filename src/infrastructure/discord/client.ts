@@ -1,14 +1,25 @@
+import { once } from 'node:events';
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 import { config } from '../../config/env.js';
+import type { FeedbackService } from '../../application/services/feedback.service.js';
 import { logger } from '../logging/logger.js';
 import { deploySlashCommands } from './deployer.js';
 import { routeInteraction } from './interactions.js';
 
+export interface DiscordClientDependencies {
+  /**
+   * Acceso perezoso al servicio de feedback: se construye despues del login
+   * porque necesita el cliente autenticado para escribir en el canal.
+   */
+  getFeedback: () => FeedbackService | null;
+}
+
 /**
- * Arranca el cliente de Discord. Unicos intents: Guilds (suficiente para
- * slash commands, minimo privilegio segun seccion 11, punto 11).
+ * Arranca el cliente de Discord y espera a que este listo.
+ * Unicos intents: Guilds (suficiente para slash commands, minimo privilegio
+ * segun seccion 11, punto 11).
  */
-export async function startDiscordClient(): Promise<void> {
+export async function startDiscordClient(deps: DiscordClientDependencies): Promise<Client<true>> {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
   });
@@ -49,6 +60,7 @@ export async function startDiscordClient(): Promise<void> {
         guildCount: client.guilds.cache.size,
         readyAt: client.readyTimestamp ? new Date(client.readyTimestamp) : null,
       }),
+      getFeedback: deps.getFeedback,
     });
   });
 
@@ -69,4 +81,9 @@ export async function startDiscordClient(): Promise<void> {
 
   // Parar en seco si el login falla: sin conexion el bot no sirve para nada.
   await client.login(config.discordToken);
+  if (!client.isReady()) {
+    await once(client, Events.ClientReady);
+  }
+  // Una vez emitido ClientReady, discord.js garantiza el estado listo.
+  return client as unknown as Client<true>;
 }
