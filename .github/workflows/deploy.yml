@@ -52,14 +52,24 @@ jobs:
 
       # Sin wrangler-action: instalar wrangler puede fallar segun el runner;
       # el repo ya fija wrangler como devDependency, lo usamos directo.
-      # Wrangler lee credenciales de CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID.
       - name: Instalar dependencias
         run: npm ci
+
+      # Validacion defensiva: delata espacios/caracteres invalidos en los
+      # secrets ANTES de que wrangler falle con el cryptico "Invalid account ID".
+      # No imprime valores, solo formato.
+      - name: Sanity de credenciales
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then echo "::error::Falta el secret CLOUDFLARE_API_TOKEN"; exit 1; fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then echo "::error::Falta el secret CLOUDFLARE_ACCOUNT_ID"; exit 1; fi
+          case "$CLOUDFLARE_ACCOUNT_ID" in *[![:alnum:]_-]*) echo "::error::CLOUDFLARE_ACCOUNT_ID contiene espacios o caracteres invalidos (pega solo los 32 hex)"; exit 1;; esac
+          echo "credenciales: formato OK"
 
       - name: Deploy
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # El account ID no es un secreto (es un identificador publico de la
-          # cuenta): se fija aqui para evitar errores de copiado/espacios.
-          CLOUDFLARE_ACCOUNT_ID: 3b028cc92fcfbe3f57713e580a3596d4
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
