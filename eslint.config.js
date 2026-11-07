@@ -15,4 +15,17 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Scripts de mantenimiento en JS puro (Node): expone globals de runtime.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        atob: 'readonly',
+      },
+    },
+  },
 );
