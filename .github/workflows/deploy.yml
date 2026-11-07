@@ -1,21 +1,18 @@
-name: CI/CD — test, build y deploy a Oracle VM
+name: CI/CD — test y deploy (Cloudflare Workers)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Un deploy a la vez; no cancelar uno en curso (el bot se reinicia solo al terminar).
+# Un deploy a la vez.
 concurrency:
   group: devbot-deploy
   cancel-in-progress: false
 
-env:
-  IMAGE: ghcr.io/indie-modding-games/dw-bot
-
 jobs:
   test:
-    name: Test (typecheck, lint, vitest)
+    name: Test (typecheck, lint, vitest, worker typecheck)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -28,8 +25,11 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Typecheck
+      - name: Typecheck (bot local)
         run: npm run typecheck
+
+      - name: Typecheck (worker Cloudflare)
+        run: npm run typecheck:worker
 
       - name: Lint
         run: npm run lint
@@ -37,69 +37,17 @@ jobs:
       - name: Tests
         run: npm test
 
-  build:
-    name: Build y push imagen (amd64 + arm64)
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-
-      # Emulacion para poder compilar linux/arm64 (Oracle free tier A1) desde
-      # un runner x64 de GitHub.
-      - name: Configurar QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Configurar Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Metadatos de la imagen
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short
-
-      - name: Build y push multi-arch
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   deploy:
-    name: Deploy a la VM de Oracle (SSH)
-    needs: build
+    name: Deploy worker a Cloudflare
+    needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Pull y restart via SSH
-        uses: appleboy/ssh-action@v1
+      - uses: actions/checkout@v5
+
+      - name: Wrangler deploy
+        uses: cloudflare/wrangler-action@v3
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          script: |
-            cd /opt/devbot
-            docker compose pull devbot
-            docker compose up -d devbot
-            docker image prune -f
-            echo "--- estado ---"
-            docker compose ps
-            docker logs --tail 15 devbot
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

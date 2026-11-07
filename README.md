@@ -114,65 +114,67 @@ El seguimiento vive en `data/feedback.json` (resiste reinicios).
 - Permitir enlazar issues existentes (`/bug link:#123`) y sincronizar issues
   creadas fuera del bot.
 
-## CI/CD — despliegue en VM de Oracle
+## CI/CD — despliegue en Cloudflare Workers (costo $0)
+
+El objetivo primario es **Cloudflare Workers** (`worker/`): Discord envía cada
+slash command al **Interactions Endpoint** del worker y un **Cron Trigger**
+cada 5 min ejecuta la ingesta de foros + sincronización GitHub → Discord.
+Sin VM, sin SSH, sin gateway persistente, y con `src/core` + `src/application`
+reutilizados intactos. El seguimiento vive en **D1** (SQLite serverless free).
 
 Pipeline (`.github/workflows/deploy.yml`), en cada push a `main`:
 
 ```
-test (typecheck+lint+vitest) → build imagen Docker (amd64+arm64) → GHCR
-                             → SSH a la VM: docker compose pull && up -d
+test (typecheck, lint, vitest, typecheck:worker) → deploy (wrangler, GHCR/Docker opcional)
 ```
 
-- **Imagen multi-arquitectura**: sirve tanto para VM ARM (free tier
-  Ampere A1) como x86. `better-sqlite3` usa precompilados, sin toolchain.
-- **Runtime sin root** y solo internet **saliente** (Discord + GitHub): el
-  bot no expone ningún puerto.
-- `.env` vive **solo en la VM** (`/opt/devbot/.env`); nunca viaja en git ni
-  en la imagen. El seguimiento (`data/feedback.json`) persiste en
-  `/opt/devbot/data` (bind mount, sobrevive reinicios y deploys).
-- **Rollback**: cada build sube también la etiqueta `sha-<commit>`; fija
-  `image: …:sha-abc1234` en el compose de la VM y `docker compose up -d`.
-
-### Secrets del repo (Settings → Secrets and variables → Actions)
-
-| Secret | Valor |
-|---|---|
-| `DEPLOY_HOST` | IP pública de la VM |
-| `DEPLOY_USER` | `ubuntu` (imagen Ubuntu) u `opc` (Oracle Linux) |
-| `DEPLOY_SSH_KEY` | clave **privada** ed25519 cuya pública está en `~/.ssh/authorized_keys` de la VM |
-
-### Puesta a punto de la VM (una sola vez)
+### Secretos del worker (3, con wrangler)
 
 ```bash
-# 1. Docker (el script oficial vale para Ubuntu/Oracle Linux)
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER   # re-loguearse para que aplique
-
-# 2. Directorio de despliegue
-sudo mkdir -p /opt/devbot/data && sudo chown -R 1000:1000 /opt/devbot/data
-cd /opt/devbot
-# 3. Colocar aqui docker-compose.yml (el del repo) y crear .env con las
-#    variables reales (mismas claves que .env.example)
-
-# 4. Acceso a GHCR (una vez; queda guardado en ~/.docker/config.json)
-#    Opcion A: el paquete dw-bot se marca PUBLICO en GitHub (la imagen no
-#             contiene secretos) y esto no hace falta.
-#    Opcion B: paquete privado + PAT clasico con read:packages:
-echo "PAT_AQUI" | docker login ghcr.io -u TU_USUARIO --password-stdin
-
-# 5. Arranque inicial (los siguientes los hace GitHub Actions solo)
-docker compose up -d
+npx wrangler secret put DISCORD_TOKEN
+npx wrangler secret put DEVBOT_GITHUB_TOKEN
+npx wrangler secret put DISCORD_PUBLIC_KEY   # Developer Portal → General Information → Public Key
 ```
 
-### Red de Oracle (seguridad)
+Config no secreta (canales, foros, etiquetas, allowlist, repo) vive en
+`wrangler.toml` `[vars]`; las tablas D1 se crean con `npm run worker:seed`.
 
-- Inbound: deja solo **22 desde tu IP** (la Security List del VCN bloquea
-  lo demás por defecto; no añadas reglas de entrada para el bot).
-- Outbound: todo permitido por defecto — el bot solo necesita salir.
-- El despliegue por SSH del workflow requiere que la VM siga aceptando 22
-  desde los rangos de GitHub Actions (puedes fijarlo a tu IP solo para tu
-  administración y crear una regla temporal si da problemas; los runners de
-  GitHub publican sus IPs en `meta.githubusercontent.com`).
+### Despliegue manual (desde esta máquina)
+
+```bash
+npm run typecheck:worker && npm run worker:deploy
+```
+
+Primer deploy requiere el **subdominio workers.dev de la cuenta** (alta única,
+solo disponible desde el dashboard de Cloudflare; la API/OAuth lo bloquea con
+405): *dash.cloudflare.com → Workers → Onboarding* y registra un subdominio.
+Luego el deploy publica `https://andromon.<subdominio>.workers.dev`.
+
+### Conectar Discord (una vez, una URL)
+
+En el Developer Portal de Andromon → **General Information → Interactions
+Endpoint URL**: `https://andromon.<subdominio>.workers.dev/interactions`.
+El worker responde al PING de verificación con la firma Ed25519 usando el
+secreto `DISCORD_PUBLIC_KEY` (se obtiene del mismo portal).
+
+### Automatizar con GitHub Actions
+
+Secretos del repo (*Settings → Secrets and variables → Actions*):
+
+| Secret                  | Valor                                              |
+| ----------------------- | -------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | token con **Workers Scripts: Edit**                 |
+| `CLOUDFLARE_ACCOUNT_ID` | `3b028cc92fcfbe3f57713e580a3596d4`                 |
+
+Con eso, cada push a `main` hace test + `wrangler deploy` automáticamente.
+
+## Alternativa: Docker + VM (conservada)
+
+`Dockerfile` (multi-stage amd64+arm64) + `docker-compose.yml` siguen en el
+repo. Si algún día hay VM (Oracle A1 con PAYG, u otro VPS): `/opt/devbot` con
+compose + `.env` local, imagen desde GHCR, `restart: unless-stopped`, y el
+job `build`/`deploy` del workflow puede reactivarse. El bot no expone puertos
+(solo salida a Discord y GitHub).
 
 ## Roadmap del MVP (§14)
 

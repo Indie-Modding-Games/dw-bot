@@ -1,0 +1,33 @@
+name = "andromon"
+main = "worker/src/index.ts"
+compatibility_date = "2026-11-01"
+
+# Publicar en https://andromon.<subdominio>.workers.dev (tras el onboarding
+# del subdominio en el dashboard de Cloudflare).
+workers_dev = true
+
+# D1 = SQLite serverless gratuito (5 GB). El id se rellena tras `wrangler d1 create devbot`.
+[[d1_databases]]
+binding = "D1"
+database_name = "devbot"
+database_id = "b69c0ae7-df37-4972-8425-5695c77152b4"
+
+# Equivalente al node-cron de la version local (Cron Triggers, incluido en free).
+[triggers]
+crons = ["*/5 * * * *"]
+
+# No secretos. Secretos (DISCORD_TOKEN, DEVBOT_GITHUB_TOKEN, DISCORD_PUBLIC_KEY)
+# se suben con: npx wrangler secret put NOMBRE
+[vars]
+DEVBOT_GUILD_ID = "1562262661247279114"
+DEVBOT_ALLOWED_USER_IDS = "277568614263947265"
+DEVBOT_FEEDBACK_CHANNEL_ID = "1568575208103874600"
+DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID = "1562266717273722920"
+DEVBOT_FEEDBACK_BUGS_CHANNEL_ID = "1562435326939758652"
+DEVBOT_PROPOSALS_REQUIRED_TAG = "Aceptado"
+DEVBOT_PROPOSALS_DONE_TAG = "Implementado"
+DEVBOT_BUGS_REQUIRED_TAG = "🟡 En revisión"
+DEVBOT_BUGS_DONE_TAG = ""
+DEVBOT_GITHUB_REPO = "Indie-Modding-Games/dw-engine"
+DEVBOT_BUG_LABELS = "bug"
+DEVBOT_SUGGESTION_LABELS = "enhancement"

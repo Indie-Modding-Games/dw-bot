@@ -12,6 +12,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "typecheck:worker": "tsc -p worker/tsconfig.json",
+    "worker:deploy": "wrangler deploy",
+    "worker:seed": "wrangler d1 execute devbot --remote --file=./worker/schema.sql",
     "deploy:commands": "tsx src/infrastructure/discord/deploy-commands.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -29,6 +32,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261107.1",
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",
@@ -39,6 +43,10 @@
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "wrangler": "^4.158.0"
+  },
+  "allowScripts": {
+    "workerd@1.20261104.1": true
   }
 }
