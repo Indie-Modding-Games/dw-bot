@@ -164,9 +164,8 @@ Secretos del repo (_Settings → Secrets and variables → Actions_):
 | Secret                  | Valor                               |
 | ----------------------- | ----------------------------------- |
 | `CLOUDFLARE_API_TOKEN`  | token con **Workers Scripts: Edit** |
-| `CLOUDFLARE_ACCOUNT_ID` | `3b028cc92fcfbe3f57713e580a3596d4`  |
 
-Con eso, cada push a `main` hace test + `wrangler deploy` automáticamente.
+El `CLOUDFLARE_ACCOUNT_ID` va fijo en el workflow (es un identificador público de la cuenta, no un secreto). Con eso, cada push a `main` hace test + `wrangler deploy` automáticamente.
 
 ## Alternativa: Docker + VM (conservada)
 
