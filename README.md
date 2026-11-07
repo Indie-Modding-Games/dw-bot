@@ -147,7 +147,7 @@ npm run typecheck:worker && npm run worker:deploy
 
 Primer deploy requiere el **subdominio workers.dev de la cuenta** (alta única,
 solo disponible desde el dashboard de Cloudflare; la API/OAuth lo bloquea con
-405): *dash.cloudflare.com → Workers → Onboarding* y registra un subdominio.
+405): _dash.cloudflare.com → Workers → Onboarding_ y registra un subdominio.
 Luego el deploy publica `https://andromon.<subdominio>.workers.dev`.
 
 ### Conectar Discord (una vez, una URL)
@@ -159,12 +159,12 @@ secreto `DISCORD_PUBLIC_KEY` (se obtiene del mismo portal).
 
 ### Automatizar con GitHub Actions
 
-Secretos del repo (*Settings → Secrets and variables → Actions*):
+Secretos del repo (_Settings → Secrets and variables → Actions_):
 
-| Secret                  | Valor                                              |
-| ----------------------- | -------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | token con **Workers Scripts: Edit**                 |
-| `CLOUDFLARE_ACCOUNT_ID` | `3b028cc92fcfbe3f57713e580a3596d4`                 |
+| Secret                  | Valor                               |
+| ----------------------- | ----------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | token con **Workers Scripts: Edit** |
+| `CLOUDFLARE_ACCOUNT_ID` | `3b028cc92fcfbe3f57713e580a3596d4`  |
 
 Con eso, cada push a `main` hace test + `wrangler deploy` automáticamente.
 

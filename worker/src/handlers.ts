@@ -34,8 +34,8 @@ export async function handleInteraction(
   payload: InteractionPayload,
   env: Env,
 ): Promise<InteractionResponse> {
-  // PING de verificacion del Developer Portal.
-  if (payload.type === 0) return { type: 1 };
+  // PING de verificacion: type 1 (documentacion 2026) responder PONG type 1.
+  if (payload.type === 1) return { type: 1 };
 
   if (payload.type !== 2 || !payload.data?.name) {
     return { type: 4, data: { content: 'Nada que hacer aqui.', flags: 64 } };

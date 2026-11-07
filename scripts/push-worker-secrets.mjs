@@ -7,7 +7,8 @@ import process from 'node:process';
 import 'dotenv/config';
 
 const PUBLIC_KEY =
-  process.env.DISCORD_PUBLIC_KEY ?? 'f024c5d6384ca06f24fb6f54e7afa7b50023297f56cd5ab74079a28372f60f95';
+  process.env.DISCORD_PUBLIC_KEY ??
+  'f024c5d6384ca06f24fb6f54e7afa7b50023297f56cd5ab74079a28372f60f95';
 
 const secrets = {
   DISCORD_TOKEN: process.env.DISCORD_TOKEN,

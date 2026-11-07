@@ -18,16 +18,6 @@ export default {
 
     if (request.method === 'POST' && url.pathname === '/interactions') {
       const body = await request.text();
-      const ok = await isValidDiscordRequest({
-        publicKey: env.DISCORD_PUBLIC_KEY,
-        signature: request.headers.get('x-signature'),
-        timestamp: request.headers.get('x-signature-timestamp'),
-        body,
-      });
-      if (!ok) {
-        logger.warn({ event: 'interaction.bad_signature' }, 'firma de Discord invalida');
-        return new Response('invalid signature', { status: 401 });
-      }
 
       let payload: InteractionPayload;
       try {
@@ -36,8 +26,49 @@ export default {
         return new Response('invalid json', { status: 400 });
       }
 
-      const result = await handleInteraction(payload, env);
-      return Response.json(result);
+      const verification = await isValidDiscordRequest({
+        publicKey: env.DISCORD_PUBLIC_KEY,
+        signature: request.headers.get('x-signature-ed25519'),
+        timestamp: request.headers.get('x-signature-timestamp'),
+        body,
+      });
+
+      // Verificacion estricta siempre (Discord envia firmas invalidas a
+      // proposito como chequeo de seguridad y espera 401):
+      if (!verification.ok) {
+        logger.warn(
+          {
+            event: 'interaction.bad_signature',
+            reason: verification.reason,
+            bodyHash: verification.bodyHash,
+            sig: request.headers.get('x-signature-ed25519')?.slice(0, 16) ?? '-',
+            ts: request.headers.get('x-signature-timestamp') ?? '-',
+            bodyLen: body.length,
+          },
+          'firma invalida: 401',
+        );
+        return new Response('invalid signature', { status: 401 });
+      }
+
+      // PING de Discord = type 1 (documentacion 2026; antes era 0).
+      // Responder PONG {"type":1} con Content-Type json.
+      if (payload.type === 1) {
+        logger.info({ event: 'interaction.ping' }, 'PING verificado: PONG');
+        return Response.json({ type: 1 });
+      }
+
+      logger.info(
+        {
+          event: 'interaction.verified',
+          reason: verification.reason,
+          bodyHash: verification.bodyHash,
+          typeValue: String(payload.type),
+        },
+        'firma valida',
+      );
+
+      const interResponse = await handleInteraction(payload, env);
+      return Response.json(interResponse);
     }
 
     return new Response('Andromon — DevBot worker (Cloudflare Workers)');
