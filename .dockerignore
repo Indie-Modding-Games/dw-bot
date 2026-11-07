@@ -1,0 +1,17 @@
+node_modules/
+dist/
+data/
+tests/
+scripts/
+coverage/
+.git/
+.github/
+.env
+.env.*
+!.env.example
+*.log
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+DevBot-MVP-Architecture.md

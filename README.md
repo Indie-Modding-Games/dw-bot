@@ -114,6 +114,66 @@ El seguimiento vive en `data/feedback.json` (resiste reinicios).
 - Permitir enlazar issues existentes (`/bug link:#123`) y sincronizar issues
   creadas fuera del bot.
 
+## CI/CD — despliegue en VM de Oracle
+
+Pipeline (`.github/workflows/deploy.yml`), en cada push a `main`:
+
+```
+test (typecheck+lint+vitest) → build imagen Docker (amd64+arm64) → GHCR
+                             → SSH a la VM: docker compose pull && up -d
+```
+
+- **Imagen multi-arquitectura**: sirve tanto para VM ARM (free tier
+  Ampere A1) como x86. `better-sqlite3` usa precompilados, sin toolchain.
+- **Runtime sin root** y solo internet **saliente** (Discord + GitHub): el
+  bot no expone ningún puerto.
+- `.env` vive **solo en la VM** (`/opt/devbot/.env`); nunca viaja en git ni
+  en la imagen. El seguimiento (`data/feedback.json`) persiste en
+  `/opt/devbot/data` (bind mount, sobrevive reinicios y deploys).
+- **Rollback**: cada build sube también la etiqueta `sha-<commit>`; fija
+  `image: …:sha-abc1234` en el compose de la VM y `docker compose up -d`.
+
+### Secrets del repo (Settings → Secrets and variables → Actions)
+
+| Secret | Valor |
+|---|---|
+| `DEPLOY_HOST` | IP pública de la VM |
+| `DEPLOY_USER` | `ubuntu` (imagen Ubuntu) u `opc` (Oracle Linux) |
+| `DEPLOY_SSH_KEY` | clave **privada** ed25519 cuya pública está en `~/.ssh/authorized_keys` de la VM |
+
+### Puesta a punto de la VM (una sola vez)
+
+```bash
+# 1. Docker (el script oficial vale para Ubuntu/Oracle Linux)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER   # re-loguearse para que aplique
+
+# 2. Directorio de despliegue
+sudo mkdir -p /opt/devbot/data && sudo chown -R 1000:1000 /opt/devbot/data
+cd /opt/devbot
+# 3. Colocar aqui docker-compose.yml (el del repo) y crear .env con las
+#    variables reales (mismas claves que .env.example)
+
+# 4. Acceso a GHCR (una vez; queda guardado en ~/.docker/config.json)
+#    Opcion A: el paquete dw-bot se marca PUBLICO en GitHub (la imagen no
+#             contiene secretos) y esto no hace falta.
+#    Opcion B: paquete privado + PAT clasico con read:packages:
+echo "PAT_AQUI" | docker login ghcr.io -u TU_USUARIO --password-stdin
+
+# 5. Arranque inicial (los siguientes los hace GitHub Actions solo)
+docker compose up -d
+```
+
+### Red de Oracle (seguridad)
+
+- Inbound: deja solo **22 desde tu IP** (la Security List del VCN bloquea
+  lo demás por defecto; no añadas reglas de entrada para el bot).
+- Outbound: todo permitido por defecto — el bot solo necesita salir.
+- El despliegue por SSH del workflow requiere que la VM siga aceptando 22
+  desde los rangos de GitHub Actions (puedes fijarlo a tu IP solo para tu
+  administración y crear una regla temporal si da problemas; los runners de
+  GitHub publican sus IPs en `meta.githubusercontent.com`).
+
 ## Roadmap del MVP (§14)
 
 - [x] **Iteración 1** — esqueleto, Discord, `/help`, `/status`, allowlist, logging

@@ -1,0 +1,14 @@
+name: devbot
+
+services:
+  devbot:
+    image: ghcr.io/indie-modding-games/dw-bot:latest
+    container_name: devbot
+    # .env vive SOLO en la VM (nunca en git ni en la imagen).
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    stop_grace_period: 10s
+    # El bot solo necesita internet saliente (Discord gateway + API de GitHub).
+    # Sin puertos expuestos.
