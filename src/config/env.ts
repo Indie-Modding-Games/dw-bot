@@ -100,6 +100,9 @@ const envSchema = z.object({
   DEVBOT_PROPOSALS_REQUIRED_TAG: z.string().trim().min(1).default('Aceptado'),
   DEVBOT_PROPOSALS_DONE_TAG: z.string().trim().min(1).default('Hecho'),
   DEVBOT_BUGS_REQUIRED_TAG: z.string().trim().min(1).default('En revisión'),
+  // Si se define, los posts de bugs tambien cambian de etiqueta cuando su
+  // ticket llega a done (p.ej. "✅ Arreglado"). Vacio = no cambiar etiquetas.
+  DEVBOT_BUGS_DONE_TAG: optionalValue(z.string().trim().min(1)),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -169,7 +172,7 @@ function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
         kind: 'bug',
         channelId: bugsChannel,
         requiredTag: data.DEVBOT_BUGS_REQUIRED_TAG,
-        doneTag: null,
+        doneTag: data.DEVBOT_BUGS_DONE_TAG ?? null,
       });
     }
 

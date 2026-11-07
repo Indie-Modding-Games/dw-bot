@@ -56,6 +56,8 @@ export function statusChanged(previous: IssueSnapshot, current: IssueSnapshot): 
 export interface IssueTrackerPort {
   createIssue(report: FeedbackReport): Promise<IssueSnapshot>;
   listIssuesUpdatedSince(since: Date): Promise<IssueSnapshot[]>;
+  /** Lectura puntual (reintentos de swaps que cayeron fuera de la ventana `since`). */
+  getIssue(number: number): Promise<IssueSnapshot | null>;
 }
 
 /** Plan de ingestion de un canal de foro hacia el backlog. */
@@ -132,4 +134,6 @@ export interface TrackedFeedback {
   discordMessageId: string | null;
   /** Set cuando el ticket nacio de un post de foro (ingestion automatica). */
   post?: TrackedPostInfo;
+  /** El swap de etiqueta del post fallo y debe reintentarse en proximos ticks. */
+  tagSwapPending?: boolean;
 }

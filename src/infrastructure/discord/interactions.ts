@@ -1,4 +1,4 @@
-import type { ChatInputCommandInteraction } from 'discord.js';
+import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import type { Logger } from 'pino';
 import { canInteract, type AuthorizationConfig } from '../../application/authorization.js';
 import { handleFeedbackReport, handleSyncNow } from '../../application/handlers/feedback.js';
@@ -27,7 +27,10 @@ function toContext(interaction: ChatInputCommandInteraction): CommandContext {
     userId: interaction.user.id,
     userName: interaction.user.username,
     reply: async (content, options = {}) => {
-      const payload = { content, ephemeral: options.ephemeral ?? false };
+      const payload =
+        options.ephemeral === true
+          ? { content, flags: MessageFlags.Ephemeral as const }
+          : { content };
       if (interaction.deferred || interaction.replied) {
         await interaction.followUp(payload);
       } else {
@@ -55,7 +58,7 @@ export async function routeInteraction(
       'interaccion rechazada por allowlist',
     );
     await interaction
-      .reply({ content: 'No tienes permiso para usar este bot.', ephemeral: true })
+      .reply({ content: 'No tienes permiso para usar este bot.', flags: MessageFlags.Ephemeral })
       .catch(() => undefined);
     return;
   }

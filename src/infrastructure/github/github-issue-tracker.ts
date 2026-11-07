@@ -88,6 +88,13 @@ export class GithubIssueTracker implements IssueTrackerPort {
     return issues;
   }
 
+  async getIssue(number: number): Promise<IssueSnapshot | null> {
+    const response = await fetch(`${this.baseUrl}/issues/${number}`, { headers: this.headers() });
+    if (response.status === 404) return null;
+    const raw = (await this.readJson(response, `leer issue #${number}`)) as RawGithubIssue;
+    return toSnapshot(raw);
+  }
+
   private headers(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.config.token}`,

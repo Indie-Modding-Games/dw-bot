@@ -52,6 +52,8 @@ function makeReport(overrides: Partial<FeedbackReport> = {}): FeedbackReport {
 class FakeTracker implements IssueTrackerPort {
   created: FeedbackReport[] = [];
   updatedList: IssueSnapshot[] = [];
+  /** Responder para lecturas puntuales (reintentos fuera de la ventana since). */
+  byNumber: IssueSnapshot[] = [];
   sinceQueries: Date[] = [];
 
   async createIssue(report: FeedbackReport): Promise<IssueSnapshot> {
@@ -62,6 +64,9 @@ class FakeTracker implements IssueTrackerPort {
     this.sinceQueries.push(since);
     return this.updatedList;
   }
+  async getIssue(number: number): Promise<IssueSnapshot | null> {
+    return this.byNumber.find((item) => item.number === number) ?? null;
+  }
 }
 
 class FakeNotifier implements BacklogNotifierPort {
@@ -70,6 +75,7 @@ class FakeNotifier implements BacklogNotifierPort {
   statusNotices: Array<{ issue: IssueSnapshot; previous: IssueSnapshot }> = [];
   doneTags: Array<{ threadId: string; doneTag: string }> = [];
   failPublish = false;
+  failMarkDone = false;
   messageSeq = 0;
 
   async publishIssueCard(report: FeedbackReport, issue: IssueSnapshot): Promise<string> {
@@ -89,6 +95,7 @@ class FakeNotifier implements BacklogNotifierPort {
     _issue: IssueSnapshot,
     doneTagName: string,
   ): Promise<void> {
+    if (this.failMarkDone) throw new Error('etiqueta de done inexistente en el foro');
     this.doneTags.push({ threadId: post.threadId, doneTag: doneTagName });
   }
 }
@@ -259,6 +266,74 @@ describe('FeedbackService.syncUpdatedIssues', () => {
     expect(notifier.doneTags).toHaveLength(0);
     // Pero si se aviso del cierre (el sync general sigue operativo):
     expect(summary.stateChanges).toBe(1);
+  });
+
+  it('reintenta el cambio de etiqueta fallido en el siguiente ciclo', async () => {
+    const { service, tracker, store, notifier } = makeService();
+    await store.upsert({
+      report: makeReport(),
+      issue: makeIssue(),
+      discordMessageId: null,
+      post: {
+        channelId: 'ch-foro',
+        threadId: 'th-1',
+        requiredTag: 'Aceptado',
+        doneTag: 'Implementado',
+      },
+    });
+    tracker.updatedList = [makeIssue({ state: 'closed', stateReason: 'completed' })];
+
+    // Primer ciclo: Discord falla la etiqueta.
+    notifier.failMarkDone = true;
+    const first = await service.syncUpdatedIssues();
+    expect(first.tagSwaps).toBe(0);
+    const afterFail = await store.list();
+    expect(afterFail[0]?.tagSwapPending).toBe(true);
+
+    // Segundo ciclo: ya funciona; reintenta aunque el snapshot este actualizado.
+    notifier.failMarkDone = false;
+    const second = await service.syncUpdatedIssues();
+    expect(second.tagSwaps).toBe(1);
+    expect(notifier.doneTags).toEqual([{ threadId: 'th-1', doneTag: 'Implementado' }]);
+    const afterOk = await store.list();
+    expect(afterOk[0]?.tagSwapPending).toBeUndefined();
+  });
+
+  it('reintenta via getIssue cuando el cierre ya salio de la ventana de sondeo', async () => {
+    const { service, tracker, store, notifier } = makeService();
+    const closed = makeIssue({
+      state: 'closed',
+      stateReason: 'completed',
+      closedAt: '2026-11-07T12:00:00Z',
+    });
+    await store.upsert({
+      report: makeReport(),
+      issue: makeIssue(),
+      discordMessageId: null,
+      post: {
+        channelId: 'ch-foro',
+        threadId: 'th-1',
+        requiredTag: 'Aceptado',
+        doneTag: 'Implementado',
+      },
+    });
+
+    // Primer ciclo falla la etiqueta.
+    tracker.updatedList = [closed];
+    notifier.failMarkDone = true;
+    await service.syncUpdatedIssues();
+
+    // Ciclo siguiente: el poll ya no devuelve la issue (salio de la ventana),
+    // pero el pendiente se resuelve con lectura puntual.
+    tracker.updatedList = [];
+    tracker.byNumber = [closed];
+    notifier.failMarkDone = false;
+    const third = await service.syncUpdatedIssues();
+
+    expect(third.tagSwaps).toBe(1);
+    expect(notifier.doneTags).toEqual([{ threadId: 'th-1', doneTag: 'Implementado' }]);
+    const saved = await store.list();
+    expect(saved[0]?.tagSwapPending).toBeUndefined();
   });
 });
 

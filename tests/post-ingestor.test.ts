@@ -61,6 +61,9 @@ class RecordingTracker implements IssueTrackerPort {
   async listIssuesUpdatedSince(): Promise<IssueSnapshot[]> {
     return [];
   }
+  async getIssue(): Promise<IssueSnapshot | null> {
+    return null;
+  }
 }
 
 class InMemoryStore implements FeedbackStorePort {

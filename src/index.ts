@@ -14,7 +14,7 @@ import {
 } from './infrastructure/scheduling/feedback-sync-scheduler.js';
 
 /**
- * Punto de entrada y composition root.
+ * Punto de entrada y composition root. (Reinicio para aplicar doneTag corregido del store.)
  * Iteracion 1: `/help` y `/status` con allowlist.
  * Feedback: `/bug` y `/suggest` hacia GitHub; fichas sincronizadas en el
  * canal de backlog; ingestion de posts de foro (propuestas etiquetadas
