@@ -47,6 +47,12 @@ export const slashCommands = [
         .setRequired(true)
         .setMaxLength(3500),
     ),
+
+  new SlashCommandBuilder()
+    .setName('sync-now')
+    .setDescription(
+      'Ejecuta ya el ciclo: ingiere posts etiquetados de los foros y sincroniza estados con GitHub.',
+    ),
 ];
 
 /** Version serializada para el registro via REST. */

@@ -1,5 +1,6 @@
 import type { Logger } from 'pino';
 import {
+  isDoneIssue,
   snapshotsEqual,
   statusChanged,
   type BacklogNotifierPort,
@@ -13,8 +14,9 @@ export interface SyncSummary {
   checked: number;
   cardUpdates: number;
   stateChanges: number;
+  /** Cambios de etiqueta en posts de foro por tickets llegados a done. */
+  tagSwaps: number;
 }
-
 /**
  * Casos de uso del feedback (capa de aplicacion). Orquesta los puertos:
  * tracker de issues, store de seguimiento y notificador de Discord.
@@ -50,12 +52,13 @@ export class FeedbackService {
 
   /**
    * Sincronizar: consulta issues actualizadas desde el ultimo sondeo y,
-   * para las monitorizadas, edita la ficha del canal y avisa cambios de estado.
+   * para las monitorizadas, edita la ficha del canal, avisa cambios de estado
+   * y, si es un post de foro cuyo ticket llego a done, cambia su etiqueta.
    */
   async syncUpdatedIssues(): Promise<SyncSummary> {
     const records = await this.store.list();
     if (records.length === 0) {
-      return { checked: 0, cardUpdates: 0, stateChanges: 0 };
+      return { checked: 0, cardUpdates: 0, stateChanges: 0, tagSwaps: 0 };
     }
 
     const lastPoll = await this.store.getLastPollAt();
@@ -65,6 +68,7 @@ export class FeedbackService {
 
     let cardUpdates = 0;
     let stateChanges = 0;
+    let tagSwaps = 0;
 
     for (const issue of updated) {
       const record = records.find((item) => item.issue.number === issue.number);
@@ -96,10 +100,24 @@ export class FeedbackService {
         }
       }
 
+      // Post de foro con ticket llegado a done: quitar la etiqueta de ingestion
+      // y poner la de "hecho" sobre el propio post (queda marcado como atendido).
+      if (record.post && record.post.doneTag && isDoneIssue(issue) && !isDoneIssue(record.issue)) {
+        try {
+          await this.notifier.markPostDone(record.post, issue, record.post.doneTag);
+          tagSwaps += 1;
+        } catch (error) {
+          this.logger.error(
+            { err: error, event: 'posts.tag_swap_failed', threadId: record.post.threadId },
+            'no se pudo cambiar la etiqueta del post',
+          );
+        }
+      }
+
       await this.store.upsert({ ...record, issue });
     }
 
     await this.store.setLastPollAt(new Date());
-    return { checked: updated.length, cardUpdates, stateChanges };
+    return { checked: updated.length, cardUpdates, stateChanges, tagSwaps };
   }
 }

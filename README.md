@@ -24,10 +24,11 @@ base de datos todavía.
 3. Copia el **Application ID** (General Information).
 4. En tu servidor de pruebas, invita el bot con scopes `bot` y
    `applications.commands` y permisos mínimos
-   (View Channels + Send Messages + Embed Links, para las fichas del backlog):
+   (View Channels + Send Messages + Embed Links + lectura/gestión de hilos
+   de foro, ver secciones de abajo):
 
    ```
-   https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=19456
+   https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=292057861120
    ```
 
 5. Copia `.env.example` a `.env` y complétalo. Activar la allowlist es
@@ -65,19 +66,27 @@ src/
 tests/                  # unitarias e integración (Vitest)
 ```
 
-## Sugerencias y bugs → backlog de GitHub (extensión)
+## Ingestión desde foros de Discord (posts → tickets)
 
-Comandos `/bug` y `/suggest` crean issues en un repo de GitHub (labels
-configurables) y publican una **ficha tipo embed en el canal de backlog**.
-Un sondeo periódico (`node-cron`, por defecto cada 5 min) detecta cambios
-en GitHub: la ficha se **edita** en el canal y se **avisa** con un mensaje
-cuando una issue se cierra, se reabre o cambia su motivo de cierre.
+El bot lee dos **canales de foro** de Discord y convierte posts en tickets:
 
-```
-Discord (/bug, /suggest) → FeedbackService → GitHub API (issues)
-                                        └→ ficha embed en canal backlog
-GitHub (estados/etiquetas) → scheduler poll → editar ficha + notificar
-```
+- **Propuestas**: solo los posts etiquetados **`Aceptado`** entran al backlog.
+  Cuando su issue llega a **done** (cerrada como completada en GitHub), el bot
+  **cambia la etiqueta del post por sí solo**: quita `Aceptado`, pone `Hecho`,
+  y comenta el cierre dentro del post.
+- **Bugs**: solo los posts etiquetados **`En revisión`** entran al backlog
+  (sin cambio automático de etiqueta).
+
+`/sync-now` fuerza el ciclo completo al instante (ingestión + sincronización)
+sin esperar al cron. La ingesta es idempotente: un post ya convertido nunca se
+duplica (se rastrea por ID de post en `data/feedback.json`).
+
+Nombres de etiquetas y canales configurables con `DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID`,
+`DEVBOT_PROPOSALS_REQUIRED_TAG/DONE_TAG`, `DEVBOT_FEEDBACK_BUGS_CHANNEL_ID` y
+`DEVBOT_BUGS_REQUIRED_TAG`. El bot necesita en **esos foros**: View Channel,
+Send Messages, Send Messages In Threads, Read Message History y **Manage Threads**.
+Si el bot no ve la etiqueta requerida en el foro, lo avisa en el log y no ingiere
+(comprueba que el foro sea tipo **Foro** y que las etiquetas existan con ese nombre exacto).
 
 Requisitos: `DEVBOT_GITHUB_TOKEN` (issues read/write), `DEVBOT_GITHUB_REPO`
 (`owner/repo`) y `DEVBOT_FEEDBACK_CHANNEL_ID`. **Si faltan, el módulo queda
@@ -85,11 +94,15 @@ deshabilitado con aviso en el arranque y el bot sigue operativo** — credencial
 pendientes para una pasada posterior.
 
 El bot necesita en el canal de backlog: View Channel, Send Messages y
-**Embed Links**. Actualiza el link de invitación a `permissions=19456`:
+**Embed Links**. El link de invitación con todos los permisos (incluidos los de
+foros) usa `permissions=292057861120`:
 
 ```
-https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=19456
+https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applications.commands&permissions=292057861120
 ```
+
+Si ya invitaste al bot con permisos menores, vuelve a usar el link (reautoriza)
+o añade los permisos desde _Server Settings → Roles → DevBot_.
 
 El seguimiento vive en `data/feedback.json` (resiste reinicios).
 

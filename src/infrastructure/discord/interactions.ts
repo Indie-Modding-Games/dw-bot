@@ -1,12 +1,13 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { Logger } from 'pino';
 import { canInteract, type AuthorizationConfig } from '../../application/authorization.js';
-import { handleFeedbackReport } from '../../application/handlers/feedback.js';
+import { handleFeedbackReport, handleSyncNow } from '../../application/handlers/feedback.js';
 import { handleHelp } from '../../application/handlers/help.js';
 import { handleStatus } from '../../application/handlers/status.js';
 import type { BotStatus, CommandContext } from '../../application/handlers/types.js';
 import type { FeedbackService } from '../../application/services/feedback.service.js';
-import type { FeedbackKind } from '../../core/feedback/types.js';
+import type { PostIngestor } from '../../application/services/post-ingestor.js';
+import type { FeedbackKind, PostSyncPlan } from '../../core/feedback/types.js';
 
 export interface RouterDependencies {
   authorization: AuthorizationConfig;
@@ -15,6 +16,10 @@ export interface RouterDependencies {
   getBotStatus: () => BotStatus;
   /** Devuelve el servicio de feedback o null si no esta configurado. */
   getFeedback: () => FeedbackService | null;
+  /** Ingestor de posts de foro (null si no hay canales de foro configurados). */
+  getPostIngestor: () => PostIngestor | null;
+  /** Planes de ingestion por foro. */
+  getForumPlans: () => PostSyncPlan[];
 }
 
 function toContext(interaction: ChatInputCommandInteraction): CommandContext {
@@ -83,6 +88,14 @@ export async function routeInteraction(
         );
         break;
       }
+      case 'sync-now':
+        await handleSyncNow(ctx, {
+          service: deps.getFeedback(),
+          ingestor: deps.getPostIngestor(),
+          plans: deps.getForumPlans(),
+          logger,
+        });
+        break;
       default:
         await ctx.reply('Comando no reconocido.', { ephemeral: true });
     }

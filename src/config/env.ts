@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import type { PostSyncPlan } from '../core/feedback/types.js';
 
 /**
  * Validacion de configuracion con Zod (seccion 6 del documento de arquitectura).
@@ -92,6 +93,13 @@ const envSchema = z.object({
   DEVBOT_BUG_LABELS: labelCsv('bug'),
   DEVBOT_SUGGESTION_LABELS: labelCsv('enhancement'),
   DEVBOT_DATA_DIR: optionalValue(z.string().min(1)),
+
+  // --- Ingestion desde foros de Discord (propuestas y bugs) ---
+  DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID: optionalValue(snowflake),
+  DEVBOT_FEEDBACK_BUGS_CHANNEL_ID: optionalValue(snowflake),
+  DEVBOT_PROPOSALS_REQUIRED_TAG: z.string().trim().min(1).default('Aceptado'),
+  DEVBOT_PROPOSALS_DONE_TAG: z.string().trim().min(1).default('Hecho'),
+  DEVBOT_BUGS_REQUIRED_TAG: z.string().trim().min(1).default('En revisión'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -130,6 +138,8 @@ export interface FeedbackConfig {
   suggestionLabels: string[];
   syncCron: string;
   dataDir: string;
+  /** Planes de ingestion desde foros (vacio si no hay canales configurados). */
+  forumPlans: PostSyncPlan[];
 }
 
 function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
@@ -142,6 +152,27 @@ function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
 
   // Config completa -> modulo activo.
   if (token && repo && channelId) {
+    const forumPlans: PostSyncPlan[] = [];
+    const proposalsChannel = data.DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID;
+    const bugsChannel = data.DEVBOT_FEEDBACK_BUGS_CHANNEL_ID;
+    if (proposalsChannel) {
+      forumPlans.push({
+        kind: 'suggestion',
+        channelId: proposalsChannel,
+        requiredTag: data.DEVBOT_PROPOSALS_REQUIRED_TAG,
+        // Unicas que cambian de tag automaticamente al llegar a done.
+        doneTag: data.DEVBOT_PROPOSALS_DONE_TAG,
+      });
+    }
+    if (bugsChannel) {
+      forumPlans.push({
+        kind: 'bug',
+        channelId: bugsChannel,
+        requiredTag: data.DEVBOT_BUGS_REQUIRED_TAG,
+        doneTag: null,
+      });
+    }
+
     return {
       feedback: {
         githubToken: token,
@@ -151,6 +182,7 @@ function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
         suggestionLabels: data.DEVBOT_SUGGESTION_LABELS,
         syncCron: data.DEVBOT_FEEDBACK_CRON,
         dataDir: data.DEVBOT_DATA_DIR ?? 'data',
+        forumPlans,
       },
       feedbackMissing: [],
     };

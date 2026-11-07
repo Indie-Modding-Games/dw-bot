@@ -1,8 +1,10 @@
 import { join } from 'node:path';
 import { FeedbackService } from './application/services/feedback.service.js';
+import { PostIngestor } from './application/services/post-ingestor.js';
 import { config } from './config/env.js';
-import { DiscordBacklogNotifier } from './infrastructure/discord/discord-backlog-notifier.js';
 import { startDiscordClient } from './infrastructure/discord/client.js';
+import { DiscordBacklogNotifier } from './infrastructure/discord/discord-backlog-notifier.js';
+import { DiscordForumSource } from './infrastructure/discord/discord-forum-source.js';
 import { JsonFeedbackStore } from './infrastructure/filesystem/json-feedback-store.js';
 import { GithubIssueTracker } from './infrastructure/github/github-issue-tracker.js';
 import { logger } from './infrastructure/logging/logger.js';
@@ -14,8 +16,10 @@ import {
 /**
  * Punto de entrada y composition root.
  * Iteracion 1: `/help` y `/status` con allowlist.
- * Extension: `/bug` y `/suggest` hacia un backlog de GitHub, con ficha
- * sincronizada en un canal de Discord (aviso + edicion al cambiar estado).
+ * Feedback: `/bug` y `/suggest` hacia GitHub; fichas sincronizadas en el
+ * canal de backlog; ingestion de posts de foro (propuestas etiquetadas
+ * "Aceptado" y bugs etiquetados "En revision"), con cambio automatico de
+ * etiqueta cuando el ticket del proposals llega a done.
  * Si faltan credenciales de GitHub, el modulo queda deshabilitado con aviso
  * y el resto del bot sigue operativo (detalles pendientes).
  */
@@ -29,11 +33,17 @@ async function main(): Promise<void> {
     'arrancando DevBot (Discord adapter)',
   );
 
-  // El router accede al servicio de forma perezosa: se construye tras el login.
+  // El router y el scheduler acceden a los servicios de forma perezosa:
+  // se construyen despues del login porque necesitan el cliente autenticado.
   let feedbackService: FeedbackService | null = null;
+  let postIngestor: PostIngestor | null = null;
   let syncJob: ScheduledJob | null = null;
 
-  const client = await startDiscordClient({ getFeedback: () => feedbackService });
+  const client = await startDiscordClient({
+    getFeedback: () => feedbackService,
+    getPostIngestor: () => postIngestor,
+    getForumPlans: () => config.feedback?.forumPlans ?? [],
+  });
 
   if (config.feedback) {
     try {
@@ -53,10 +63,32 @@ async function main(): Promise<void> {
       );
       const notifier = new DiscordBacklogNotifier(client, config.feedback.backlogChannelId, logger);
       feedbackService = new FeedbackService(tracker, store, notifier, logger);
-      syncJob = startFeedbackSyncScheduler(feedbackService, config.feedback.syncCron, logger);
+
+      if (config.feedback.forumPlans.length > 0) {
+        const forumSource = new DiscordForumSource(client, logger);
+        postIngestor = new PostIngestor(forumSource, tracker, store, logger);
+        logger.info(
+          {
+            event: 'forums.enabled',
+            plans: config.feedback.forumPlans.map((p) => ({
+              kind: p.kind,
+              channelId: p.channelId,
+            })),
+          },
+          'ingestion de posts de foro habilitada',
+        );
+      }
+
+      syncJob = startFeedbackSyncScheduler(
+        feedbackService,
+        config.feedback.syncCron,
+        logger,
+        postIngestor,
+        config.feedback.forumPlans,
+      );
       logger.info(
         { event: 'feedback.enabled', repo: config.feedback.repo },
-        'modulo de feedback GitHub habilitado (/bug y /suggest operativos)',
+        'modulo de feedback GitHub habilitado (/bug, /suggest y /sync-now operativos)',
       );
     } catch (error) {
       // Config completa pero inicializacion fallo (repo inexistente, etc.):

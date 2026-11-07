@@ -9,6 +9,7 @@ import {
   type IssueSnapshot,
   type IssueTrackerPort,
   type TrackedFeedback,
+  type TrackedPostInfo,
 } from '../src/core/feedback/types.js';
 
 /**
@@ -37,13 +38,14 @@ function makeIssue(overrides: Partial<IssueSnapshot> = {}): IssueSnapshot {
   };
 }
 
-function makeReport(): FeedbackReport {
+function makeReport(overrides: Partial<FeedbackReport> = {}): FeedbackReport {
   return {
     kind: 'bug',
     title: 'El build falla',
     description: 'Steps: apagar worker y correr make',
     reportedById: '111111111111111111',
     reportedByName: 'seba',
+    ...overrides,
   };
 }
 
@@ -66,6 +68,7 @@ class FakeNotifier implements BacklogNotifierPort {
   published: Array<{ report: FeedbackReport; issue: IssueSnapshot }> = [];
   edits: Array<{ messageId: string; issue: IssueSnapshot }> = [];
   statusNotices: Array<{ issue: IssueSnapshot; previous: IssueSnapshot }> = [];
+  doneTags: Array<{ threadId: string; doneTag: string }> = [];
   failPublish = false;
   messageSeq = 0;
 
@@ -80,6 +83,13 @@ class FakeNotifier implements BacklogNotifierPort {
   }
   async notifyStatusChange(issue: IssueSnapshot, previous: IssueSnapshot): Promise<void> {
     this.statusNotices.push({ issue, previous });
+  }
+  async markPostDone(
+    post: TrackedPostInfo,
+    _issue: IssueSnapshot,
+    doneTagName: string,
+  ): Promise<void> {
+    this.doneTags.push({ threadId: post.threadId, doneTag: doneTagName });
   }
 }
 
@@ -147,7 +157,7 @@ describe('FeedbackService.syncUpdatedIssues', () => {
 
     const summary = await service.syncUpdatedIssues();
 
-    expect(summary).toEqual({ checked: 0, cardUpdates: 0, stateChanges: 0 });
+    expect(summary).toEqual({ checked: 0, cardUpdates: 0, stateChanges: 0, tagSwaps: 0 });
     expect(tracker.sinceQueries).toHaveLength(0);
   });
 
@@ -196,6 +206,59 @@ describe('FeedbackService.syncUpdatedIssues', () => {
     expect(notifier.edits).toHaveLength(0);
     expect(notifier.statusNotices).toHaveLength(0);
     expect(summary.cardUpdates).toBe(0);
+  });
+
+  it('cambia la etiqueta del post de propuesta cuando el ticket llega a done', async () => {
+    const { service, tracker, store, notifier } = makeService();
+    // Ticket nacido de un post del foro de propuestas (con doneTag).
+    await store.upsert({
+      report: makeReport(),
+      issue: makeIssue(),
+      discordMessageId: null,
+      post: { channelId: 'ch-foro', threadId: 'th-1', requiredTag: 'Aceptado', doneTag: 'Hecho' },
+    });
+    tracker.updatedList = [
+      makeIssue({ state: 'closed', stateReason: 'completed', closedAt: '2026-11-07T10:00:00Z' }),
+    ];
+
+    const summary = await service.syncUpdatedIssues();
+
+    expect(summary.tagSwaps).toBe(1);
+    expect(notifier.doneTags).toEqual([{ threadId: 'th-1', doneTag: 'Hecho' }]);
+  });
+
+  it('no cambia la etiqueta si el cierre es "not_planned" (no es done)', async () => {
+    const { service, tracker, store, notifier } = makeService();
+    await store.upsert({
+      report: makeReport(),
+      issue: makeIssue(),
+      discordMessageId: null,
+      post: { channelId: 'ch-foro', threadId: 'th-1', requiredTag: 'Aceptado', doneTag: 'Hecho' },
+    });
+    tracker.updatedList = [makeIssue({ state: 'closed', stateReason: 'not_planned' })];
+
+    const summary = await service.syncUpdatedIssues();
+
+    expect(summary.tagSwaps).toBe(0);
+    expect(notifier.doneTags).toHaveLength(0);
+  });
+
+  it('no cambia etiquetas en posts de bugs (sin doneTag configurado)', async () => {
+    const { service, tracker, store, notifier } = makeService();
+    await store.upsert({
+      report: makeReport({ kind: 'bug' }),
+      issue: makeIssue(),
+      discordMessageId: null,
+      post: { channelId: 'ch-bugs', threadId: 'th-2', requiredTag: 'En revisión', doneTag: null },
+    });
+    tracker.updatedList = [makeIssue({ state: 'closed', stateReason: 'completed' })];
+
+    const summary = await service.syncUpdatedIssues();
+
+    expect(summary.tagSwaps).toBe(0);
+    expect(notifier.doneTags).toHaveLength(0);
+    // Pero si se aviso del cierre (el sync general sigue operativo):
+    expect(summary.stateChanges).toBe(1);
   });
 });
 

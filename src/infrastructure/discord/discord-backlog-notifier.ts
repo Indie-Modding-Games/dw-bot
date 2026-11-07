@@ -1,10 +1,11 @@
-import { EmbedBuilder, type Client, type GuildTextBasedChannel } from 'discord.js';
+import { ChannelType, EmbedBuilder, type Client, type GuildTextBasedChannel } from 'discord.js';
 import type { Logger } from 'pino';
 import {
   FEEDBACK_EMOJI,
   type BacklogNotifierPort,
   type FeedbackReport,
   type IssueSnapshot,
+  type TrackedPostInfo,
 } from '../../core/feedback/types.js';
 
 const STATE_COLORS = { open: 0x2ea043, closed: 0x8250df } as const;
@@ -53,6 +54,56 @@ export class DiscordBacklogNotifier implements BacklogNotifierPort {
         to: `${issue.state}/${issue.stateReason ?? '-'}`,
       },
       'cambio de estado notificado en el canal de backlog',
+    );
+  }
+
+  /**
+   * Cambia la etiqueta del post de foro: quita la de ingestion ("Aceptado")
+   * y pone la de done ("Hecho"), y deja constancia con un comentario en el
+   * propio post. Requiere Manage Threads en el canal de foro.
+   */
+  async markPostDone(
+    post: TrackedPostInfo,
+    issue: IssueSnapshot,
+    doneTagName: string,
+  ): Promise<void> {
+    const forum = await this.client.channels.fetch(post.channelId);
+    if (!forum || forum.type !== ChannelType.GuildForum) {
+      throw new Error(`el canal ${post.channelId} ya no es un foro`);
+    }
+
+    const doneTag = forum.availableTags.find(
+      (tag) => tag.name.toLowerCase() === doneTagName.toLowerCase(),
+    );
+    if (!doneTag) {
+      throw new Error(
+        `la etiqueta de done "${doneTagName}" no existe en el foro ${forum.name}; disponible: ${forum.availableTags.map((t) => t.name).join(', ') || '(ninguna)'}`,
+      );
+    }
+
+    const requiredTag = forum.availableTags.find(
+      (tag) => tag.name.toLowerCase() === post.requiredTag.toLowerCase(),
+    );
+
+    const thread = await this.client.channels.fetch(post.threadId);
+    if (!thread || !thread.isThread()) {
+      throw new Error(`el post ${post.threadId} ya no existe`);
+    }
+
+    const nextTags = thread.appliedTags.filter((id) => id !== requiredTag?.id && id !== doneTag.id);
+    nextTags.push(doneTag.id);
+    await thread.setAppliedTags(nextTags);
+
+    // Aviso dentro del propio post, sin romper si falla.
+    await thread
+      .send({
+        content: `✅ Ticket **#${issue.number}** cerrado como completado en el backlog de GitHub: ${issue.url}`,
+      })
+      .catch(() => undefined);
+
+    this.logger.info(
+      { event: 'posts.tag_swapped', threadId: post.threadId, doneTag: doneTagName },
+      'etiqueta del post cambiada por ticket done',
     );
   }
 

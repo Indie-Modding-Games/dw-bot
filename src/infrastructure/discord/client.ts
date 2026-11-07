@@ -2,6 +2,8 @@ import { once } from 'node:events';
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 import { config } from '../../config/env.js';
 import type { FeedbackService } from '../../application/services/feedback.service.js';
+import type { PostIngestor } from '../../application/services/post-ingestor.js';
+import type { PostSyncPlan } from '../../core/feedback/types.js';
 import { logger } from '../logging/logger.js';
 import { deploySlashCommands } from './deployer.js';
 import { routeInteraction } from './interactions.js';
@@ -12,6 +14,8 @@ export interface DiscordClientDependencies {
    * porque necesita el cliente autenticado para escribir en el canal.
    */
   getFeedback: () => FeedbackService | null;
+  getPostIngestor: () => PostIngestor | null;
+  getForumPlans: () => PostSyncPlan[];
 }
 
 /**
@@ -61,6 +65,8 @@ export async function startDiscordClient(deps: DiscordClientDependencies): Promi
         readyAt: client.readyTimestamp ? new Date(client.readyTimestamp) : null,
       }),
       getFeedback: deps.getFeedback,
+      getPostIngestor: deps.getPostIngestor,
+      getForumPlans: deps.getForumPlans,
     });
   });
 
