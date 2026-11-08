@@ -88,6 +88,8 @@ const envSchema = z.object({
   DEVBOT_GITHUB_REPO: optionalValue(
     z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'DEVBOT_GITHUB_REPO debe tener formato owner/repo'),
   ),
+  /** ID de GraphQL del proyecto GitHub (Projects v2) para asignar issues. Opcional. */
+  DEVBOT_GITHUB_PROJECT_ID: optionalValue(z.string().min(1)),
   DEVBOT_FEEDBACK_CHANNEL_ID: optionalValue(snowflake),
   DEVBOT_FEEDBACK_CRON: z.string().min(1).default('*/5 * * * *'),
   DEVBOT_BUG_LABELS: labelCsv('bug'),
@@ -143,6 +145,8 @@ export interface FeedbackConfig {
   dataDir: string;
   /** Planes de ingestion desde foros (vacio si no hay canales configurados). */
   forumPlans: PostSyncPlan[];
+  /** ID de GraphQL del proyecto GitHub (Projects v2) donde asignar issues. */
+  projectId?: string;
 }
 
 function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
@@ -186,6 +190,7 @@ function buildFeedbackConfig(data: z.infer<typeof envSchema>): {
         syncCron: data.DEVBOT_FEEDBACK_CRON,
         dataDir: data.DEVBOT_DATA_DIR ?? 'data',
         forumPlans,
+        projectId: data.DEVBOT_GITHUB_PROJECT_ID,
       },
       feedbackMissing: [],
     };

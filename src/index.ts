@@ -53,6 +53,7 @@ async function main(): Promise<void> {
           repo: config.feedback.repo,
           bugLabels: config.feedback.bugLabels,
           suggestionLabels: config.feedback.suggestionLabels,
+          projectId: config.feedback.projectId,
         },
         logger,
       );

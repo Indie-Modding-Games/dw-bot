@@ -23,6 +23,9 @@ export interface Env {
   DEVBOT_SUGGESTION_LABELS: string;
   /** '1' (default) anuncia la version nueva en Discord tras cada deploy; '0' lo apaga. */
   DEVBOT_ANNOUNCE_ON_UPDATE?: string;
+  /** ID de GraphQL del proyecto GitHub (Projects v2) donde asignar cada issue.
+   * Vacío = no asignar a proyecto. Obtenerlo con scripts/debug-github-projects.mjs. */
+  DEVBOT_GITHUB_PROJECT_ID?: string;
 
   // --- Bindings ---
   D1: D1Database;

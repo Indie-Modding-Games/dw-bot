@@ -13,6 +13,9 @@ export interface GithubTrackerConfig {
   repo: string;
   bugLabels: string[];
   suggestionLabels: string[];
+  /** ID de GraphQL del proyecto (Projects v2) donde asignar cada issue.
+   * Vacío = no asignar a proyecto (el bot sigue funcionando igual). */
+  projectId?: string;
 }
 
 interface RawGithubLabel {
@@ -28,6 +31,8 @@ interface RawGithubIssue {
   labels: RawGithubLabel[];
   updated_at: string;
   closed_at?: string | null;
+  /** Nodo global del issue (necesario para projectV2_addItem). */
+  node_id?: string;
   /** El endpoint /issues tambien devuelve pull requests: se filtran. */
   pull_request?: unknown;
 }
@@ -59,6 +64,8 @@ export class GithubIssueTracker implements IssueTrackerPort {
       body: JSON.stringify({ title: report.title, body: buildIssueBody(report), labels }),
     });
     const data = (await this.readJson(response, 'crear issue')) as RawGithubIssue;
+    // Asignar al proyecto por defecto (best-effort: si falla, la issue se crea igual).
+    await this.assignToProject(data.node_id ?? '');
     return toSnapshot(data);
   }
 
@@ -111,6 +118,7 @@ export class GithubIssueTracker implements IssueTrackerPort {
       body: JSON.stringify(payload),
     });
     const raw = (await this.readJson(response, `actualizar issue #${number}`)) as RawGithubIssue;
+    await this.assignToProject(raw.node_id ?? '');
     return toSnapshot(raw);
   }
 
@@ -171,6 +179,74 @@ export class GithubIssueTracker implements IssueTrackerPort {
     }
     this.repoId = String(data.id);
     return this.repoId;
+  }
+
+  /**
+   * Consulta GraphQL de GitHub (Projects v2 usa GraphQL; la API REST de
+   * proyectos esta deprecada). Lanza si hay errores de HTTP o de GraphQL.
+   */
+  private async graphql(
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<unknown> {
+    const response = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.config.token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'devbot-feedback',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    const body = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        `GraphQL HTTP ${response.status}: ${JSON.stringify(body).slice(0, 300)}`,
+      );
+    }
+    if (body.errors) {
+      throw new Error(`GraphQL errores: ${JSON.stringify(body.errors).slice(0, 500)}`);
+    }
+    return body.data;
+  }
+
+  /**
+   * Asigna la issue (por su node_id global) al proyecto por defecto del repo.
+   * Best-effort: cualquier fallo se registra y no bloquea la creacion/actualizacion
+   * de la issue.
+   */
+  private async assignToProject(nodeId: string): Promise<void> {
+    if (!this.config.projectId || !nodeId) return;
+    const query = `mutation($projectId: ID!, $contentId: ID!) {
+      projectV2_addItem(input: {projectId: $projectId, contentId: $contentId}) {
+        item { id }
+      }
+    }`;
+    try {
+      await this.graphql(query, {
+        projectId: this.config.projectId,
+        contentId: nodeId,
+      });
+      this._logger.info(
+        {
+          event: 'github.project_assigned',
+          contentId: nodeId,
+          projectId: this.config.projectId,
+        },
+        'issue asignada al proyecto GitHub',
+      );
+    } catch (error) {
+      this._logger.warn(
+        {
+          err: error,
+          event: 'github.project_assign_failed',
+          contentId: nodeId,
+          projectId: this.config.projectId,
+        },
+        'no se pudo asignar la issue al proyecto; la issue se crea igual',
+      );
+    }
   }
 
   private headers(): Record<string, string> {

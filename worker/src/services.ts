@@ -28,6 +28,7 @@ export function buildServices(env: Env): WorkerServices {
       repo: env.DEVBOT_GITHUB_REPO,
       bugLabels: csvList(env.DEVBOT_BUG_LABELS),
       suggestionLabels: csvList(env.DEVBOT_SUGGESTION_LABELS),
+      projectId: env.DEVBOT_GITHUB_PROJECT_ID,
     },
     logger,
   );
