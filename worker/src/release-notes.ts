@@ -20,6 +20,9 @@ export const RELEASE_NOTES: Record<string, string[]> = {
     'Mitad de llamadas a Discord por ciclo: una sola lectura por post cubre mensaje inicial y respuestas',
     'Reintento automatico cuando Discord aplica rate-limit (HTTP 429 con Retry-After)',
   ],
+  '2026.11.08.3': [
+    'Si el mensaje inicial del post esta vacio, el cuerpo de la issue se toma del primer mensaje con texto del OP en el chat del post (sin duplicarlo como comentario)',
+  ],
 };
 
 /** Mensaje de anuncio para la version actual (con notas o fallback generico). */

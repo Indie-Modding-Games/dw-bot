@@ -145,6 +145,14 @@ Send Messages, Send Messages In Threads, Read Message History y **Manage Threads
 Si el bot no ve la etiqueta requerida en el foro, lo avisa en el log y no ingiere
 (comprueba que el foro sea tipo **Foro** y que las etiquetas existan con ese nombre exacto).
 
+> ⚠️ **Requisito indispensable — Message Content Intent**: en el
+> [Developer Portal](https://discord.com/developers/applications) → tu app →
+> **Bot → Privileged Gateway Intents** hay que activar **Message Content
+> Intent**. Sin él, Discord devuelve los mensajes **con `content` vacío** al
+> bot incluso por REST (solo ve el texto de sus propios mensajes), y los
+> tickets saldrían como "(post sin texto)". Se puede verificar con
+> `node scripts/debug-thread-read.mjs` (usa el `DISCORD_TOKEN` del `.env`).
+
 Requisitos: `DEVBOT_GITHUB_TOKEN` (issues read/write), `DEVBOT_GITHUB_REPO`
 (`owner/repo`) y `DEVBOT_FEEDBACK_CHANNEL_ID`. **Si faltan, el módulo queda
 deshabilitado con aviso en el arranque y el bot sigue operativo** — credenciales
