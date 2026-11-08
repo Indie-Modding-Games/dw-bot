@@ -96,7 +96,9 @@ export interface BacklogNotifierPort {
   notifyStatusChange(issue: IssueSnapshot, previous: IssueSnapshot): Promise<void>;
   /**
    * Cambia la etiqueta del post de foro: quita `requiredTag` y pone `doneTagName`
-   * cuando el ticket llega a done. Solo aplica a posts monitorizados.
+   * cuando el ticket llega a done, y ARCHIVA (bloquea) el post para que salga
+   * del foro activo y de las busquedas sin borrar el historial.
+   * Solo aplica a posts monitorizados.
    */
   markPostDone(post: TrackedPostInfo, issue: IssueSnapshot, doneTagName: string): Promise<void>;
 }

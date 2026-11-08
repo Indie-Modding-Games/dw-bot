@@ -72,10 +72,19 @@ El bot lee dos **canales de foro** de Discord y convierte posts en tickets:
 
 - **Propuestas**: solo los posts etiquetados **`Aceptado`** entran al backlog.
   Cuando su issue llega a **done** (cerrada como completada en GitHub), el bot
-  **cambia la etiqueta del post por sí solo**: quita `Aceptado`, pone `Hecho`,
-  y comenta el cierre dentro del post.
+  **cierra el post por sí solo**: quita `Aceptado`, pone `Hecho`, comenta el
+  cierre dentro del post y lo **archiva** (queda bloqueado, fuera del foro
+  activo y de las busquedas, con el historial intacto y desarchivable).
+  Como los posts archivados ya no aparecen en los hilos activos, tampoco
+  reciben más sincronizaciones de contenido: el ciclo queda libre para los
+  posts que aún importan.
 - **Bugs**: solo los posts etiquetados **`En revisión`** entran al backlog
-  (sin cambio automático de etiqueta).
+  (con `DEVBOT_BUGS_DONE_TAG` definida, también se etiquetan y archivan al
+  llegar a done).
+
+> Si una issue se reabre después de archivar el post, el bot no lo desarchiva
+> automáticamente: hay que desarchivarlo a mano desde Discord para seguir
+> sincronizando ese ticket.
 
 `/sync-now` fuerza el ciclo completo al instante (ingestión + sincronización)
 sin esperar al cron. La ingesta es idempotente: un post ya convertido nunca se
@@ -105,6 +114,11 @@ Requisitos extra del token de GitHub: el upload de assets usa
 Con PAT classic funciona; si usas fine-grained y el upload devuelve 401/403,
 prueba con un token classic o un GitHub App. Si una subida falla, el bot lo
 registra en el log (`posts.attachment_upload_failed`) y reintenta solo.
+
+Cuando el ticket llega a done, el post se **archiva** y queda fuera del foro
+activo: desde ese momento deja de entrar en los ciclos de revisión (los
+reintentos de etiqueta pendientes siguen funcionando porque se resuelven por
+ID de post, no por listado).
 
 Nombres de etiquetas y canales configurables con `DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID`,
 `DEVBOT_PROPOSALS_REQUIRED_TAG/DONE_TAG`, `DEVBOT_FEEDBACK_BUGS_CHANNEL_ID` y

@@ -86,9 +86,14 @@ export class WorkerBacklogNotifier implements BacklogNotifierPort {
       )
       .catch(() => undefined);
 
+    // Archivar el post: sale del foro activo y de las busquedas (historial
+    // intacto y desarchivable). Si falla, el swap queda pendiente y se
+    // reintenta en el proximo tick (la etiqueta de done ya puesta no se duplica).
+    await this.rest.archiveThread(post.threadId);
+
     this.logger.info(
-      { event: 'posts.tag_swapped', threadId: post.threadId, doneTag: doneTagName },
-      'etiqueta del post cambiada por ticket done',
+      { event: 'posts.tag_swapped', threadId: post.threadId, doneTag: doneTagName, archived: true },
+      'post etiquetado como done y archivado por ticket cerrado',
     );
   }
 }

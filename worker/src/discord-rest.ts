@@ -116,6 +116,11 @@ export class DiscordRest {
     return this.request('PATCH', `/channels/${threadId}`, { applied_tags: tagIds });
   }
 
+  /** Archiva (bloquea) un hilo: sale del foro activo y de las busquedas. */
+  archiveThread(threadId: string): Promise<unknown> {
+    return this.request('PATCH', `/channels/${threadId}`, { archived: true });
+  }
+
   /** Registro de slash commands a nivel de servidor (propagacion inmediata). */
   putGuildCommands(guildId: string, applicationId: string, commands: unknown[]): Promise<unknown> {
     return this.request(

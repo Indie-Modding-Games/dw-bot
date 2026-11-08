@@ -59,8 +59,9 @@ export class DiscordBacklogNotifier implements BacklogNotifierPort {
 
   /**
    * Cambia la etiqueta del post de foro: quita la de ingestion ("Aceptado")
-   * y pone la de done ("Hecho"), y deja constancia con un comentario en el
-   * propio post. Requiere Manage Threads en el canal de foro.
+   * y pone la de done ("Hecho"), deja constancia con un comentario en el
+   * propio post y lo ARCHIVA (bloqueado, fuera del foro activo y de las
+   * busquedas, historial intacto). Requiere Manage Threads en el canal de foro.
    */
   async markPostDone(
     post: TrackedPostInfo,
@@ -101,9 +102,13 @@ export class DiscordBacklogNotifier implements BacklogNotifierPort {
       })
       .catch(() => undefined);
 
+    // Archivar el post: sale del foro activo y de las busquedas (desarchivable).
+    // Si falla, el swap queda pendiente y se reintenta en el proximo tick.
+    await thread.setArchived(true);
+
     this.logger.info(
-      { event: 'posts.tag_swapped', threadId: post.threadId, doneTag: doneTagName },
-      'etiqueta del post cambiada por ticket done',
+      { event: 'posts.tag_swapped', threadId: post.threadId, doneTag: doneTagName, archived: true },
+      'post etiquetado como done y archivado por ticket cerrado',
     );
   }
 
