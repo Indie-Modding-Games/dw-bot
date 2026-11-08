@@ -33,7 +33,7 @@ export interface RestMessage {
 export class DiscordRest {
   constructor(private readonly token: string) {}
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, attempt = 0): Promise<T> {
     const response = await fetch(`${API}${path}`, {
       method,
       headers: {
@@ -42,6 +42,16 @@ export class DiscordRest {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+
+    // Rate limit de Discord (429): respetar Retry-After y reintentar con
+    // limites (muchos posts por ciclo puedenburstear la cuota global).
+    if (response.status === 429 && attempt < 2) {
+      const retryAfter = Number(response.headers.get('retry-after'));
+      const waitMs = Math.min(Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000, 5000);
+      await new Promise((resolve) => setTimeout(resolve, waitMs + attempt * 500));
+      return this.request<T>(method, path, body, attempt + 1);
+    }
+
     if (!response.ok) {
       const detail = (await response.text().catch(() => '')).slice(0, 300);
       throw new Error(`Discord API fallo (${method} ${path}): HTTP ${response.status} ${detail}`);
@@ -78,22 +88,10 @@ export class DiscordRest {
   }
 
   /**
-   * Mensaje inicial de un post de foro: los mensajes vienen mas nuevo primero,
-   * el starter es el ultimo de la pagina (los posts no superan 100 respuestas
-   * en la practica para este bot).
-   */
-  async getThreadStarterMessage(threadId: string): Promise<RestMessage | null> {
-    const messages = await this.request<RestMessage[]>(
-      'GET',
-      `/channels/${threadId}/messages?limit=100`,
-    );
-    if (!Array.isArray(messages) || messages.length === 0) return null;
-    return messages[messages.length - 1] ?? null;
-  }
-
-  /**
    * Mensajes del hilo mas recientes que `afterId` (null = ultimos 100).
-   * La API los envia del mas nuevo al mas viejo; se devuelven en orden cronologico.
+   * La API los envia del mas nuevo al mas viejo; se devuelven en orden
+   * cronologico. Con `null` y <=100 mensajes, el primero es el starter del
+   * post (los posts de este foro no superan 100 respuestas en la practica).
    */
   async fetchThreadMessages(threadId: string, afterId: string | null): Promise<RestMessage[]> {
     const query = afterId === null ? 'limit=100' : `after=${afterId}&limit=100`;

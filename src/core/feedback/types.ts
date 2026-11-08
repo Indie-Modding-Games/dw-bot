@@ -160,8 +160,8 @@ export interface ForumPost {
   channelId: string;
   threadId: string;
   title: string;
-  /** Contenido del mensaje inicial del post. */
-  description: string;
+  /** Contenido del mensaje inicial; null si NO se pudo leer este ciclo. */
+  description: string | null;
   authorName: string;
   /** URL para enlazar el post desde la issue. */
   postUrl: string;
@@ -169,6 +169,12 @@ export interface ForumPost {
   attachments: PostAttachment[];
   /** ID del mensaje inicial; null si no se pudo leer el post. */
   starterMessageId: string | null;
+  /**
+   * Ultimos mensajes del hilo leidos en la MISMA pasada que el post, en orden
+   * cronologico (null si fallo la lectura). El ingestor saca de aqui las
+   * respuestas nuevas: una sola lectura de Discord por post y ciclo.
+   */
+  messages: ForumThreadMessage[] | null;
 }
 
 /** Bytes descargados de un adjunto de Discord. */
@@ -181,11 +187,6 @@ export interface UploadedFile {
 /** Puerto: lee posts etiquetados de un canal de foro (adaptador Discord). */
 export interface ForumPostSourcePort {
   fetchPosts(channelId: string, requiredTag: string): Promise<ForumPost[]>;
-  /** Mensajes del hilo mas recientes que `afterMessageId` (null = todos). */
-  fetchThreadMessages(
-    threadId: string,
-    afterMessageId: string | null,
-  ): Promise<ForumThreadMessage[]>;
   /** Descarga un adjunto del CDN de Discord; null si ya no existe o fallo. */
   fetchAttachmentBytes(url: string): Promise<ArrayBuffer | null>;
 }

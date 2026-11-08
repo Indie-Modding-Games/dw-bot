@@ -41,6 +41,7 @@ function makePost(overrides: Partial<ForumPost> = {}): ForumPost {
     postUrl: 'https://discord.com/channels/g/ch-proposals/th-1',
     attachments: [],
     starterMessageId: 'm-1',
+    messages: [],
     ...overrides,
   };
 }
@@ -61,26 +62,16 @@ function makeMessage(overrides: Partial<ForumThreadMessage> = {}): ForumThreadMe
 class FakeForumSource implements ForumPostSourcePort {
   /** posts por canal; la fuente real ya filtra por etiqueta. */
   byChannel = new Map<string, ForumPost[]>();
-  /** mensajes del hilo por threadId (fetchThreadMessages los devuelve en orden). */
-  threadMessages = new Map<string, ForumThreadMessage[]>();
   calls: Array<{ channelId: string; requiredTag: string }> = [];
   downloads: string[] = [];
-  failDownload = false;
 
   async fetchPosts(channelId: string, requiredTag: string): Promise<ForumPost[]> {
     this.calls.push({ channelId, requiredTag });
     return this.byChannel.get(channelId) ?? [];
   }
 
-  async fetchThreadMessages(threadId: string, afterMessageId: string | null) {
-    const all = this.threadMessages.get(threadId) ?? [];
-    if (afterMessageId === null) return all;
-    return all.filter((message) => message.id > afterMessageId);
-  }
-
   async fetchAttachmentBytes(url: string) {
     this.downloads.push(url);
-    if (this.failDownload) throw new Error('CDN 500');
     return new ArrayBuffer(8);
   }
 }
@@ -289,17 +280,60 @@ describe('PostIngestor: sincronizacion continua', () => {
     expect(tracker.updates).toHaveLength(1);
   });
 
+  it('un post no legible este ciclo NO toca la issue (y el siguiente la repara)', async () => {
+    const { ingestor, source, tracker } = makeIngestor();
+    source.byChannel.set('ch-proposals', [makePost()]);
+    await ingestor.ingestNewPosts([proposalsPlan]);
+
+    // Ciclo con lectura fallida (p. ej. 429): description y messages null.
+    source.byChannel.set('ch-proposals', [
+      makePost({ description: null, messages: null, starterMessageId: null }),
+    ]);
+    const bad = await ingestor.ingestNewPosts([proposalsPlan]);
+    expect(bad.updated).toBe(0);
+    expect(tracker.updates).toHaveLength(0);
+
+    // Ciclo legible con texto nuevo: se actualiza con el contenido real.
+    source.byChannel.set('ch-proposals', [makePost({ description: 'texto real actual' })]);
+    const good = await ingestor.ingestNewPosts([proposalsPlan]);
+    expect(good.updated).toBe(1);
+    expect(tracker.updates[0]?.body).toContain('texto real actual');
+  });
+
+  it('un post ilegible al crear crea el ticket y se rellena al poder leerse', async () => {
+    const { ingestor, source, tracker, store } = makeIngestor();
+    source.byChannel.set('ch-proposals', [
+      makePost({ description: null, messages: null, starterMessageId: null }),
+    ]);
+
+    const first = await ingestor.ingestNewPosts([proposalsPlan]);
+    expect(first.created).toBe(1);
+    expect(tracker.created[0]?.body).toContain('_(post sin texto)_');
+    const afterCreate = await store.list();
+    expect(afterCreate[0]?.post?.contentHash).toBeUndefined();
+
+    source.byChannel.set('ch-proposals', [makePost()]);
+    const second = await ingestor.ingestNewPosts([proposalsPlan]);
+    expect(second.updated).toBe(1);
+    expect(tracker.updates[0]?.body).toContain('Se agradece un toggle de tema');
+  });
+
   it('reenvia las respuestas nuevas del hilo como comentarios (ignorando bots/sistema)', async () => {
     const { ingestor, source, tracker } = makeIngestor();
     source.byChannel.set('ch-proposals', [makePost()]);
     await ingestor.ingestNewPosts([proposalsPlan]);
 
-    source.threadMessages.set('th-1', [
-      makeMessage({ id: 'm-0', content: 'anterior al ticket' }), // watermark lo excluye
-      makeMessage({ id: 'm-2', content: 'Tambien hace falta en el editor' }),
-      makeMessage({ id: 'm-3', content: 'fixeado', isBot: true }),
-      makeMessage({ id: 'm-4', type: 3 }), // mensaje del sistema
-      makeMessage({ id: 'm-5', content: '', attachments: [makeAttachment('att-9')] }),
+    source.byChannel.set('ch-proposals', [
+      makePost({
+        messages: [
+          makeMessage({ id: 'm-0', content: 'anterior al ticket' }), // watermark lo excluye
+          makeMessage({ id: 'm-1', content: 'starter' }),
+          makeMessage({ id: 'm-2', content: 'Tambien hace falta en el editor' }),
+          makeMessage({ id: 'm-3', content: 'fixeado', isBot: true }),
+          makeMessage({ id: 'm-4', type: 3 }), // mensaje del sistema
+          makeMessage({ id: 'm-5', content: '', attachments: [makeAttachment('att-9')] }),
+        ],
+      }),
     ]);
     const summary = await ingestor.ingestNewPosts([proposalsPlan]);
 
@@ -318,10 +352,15 @@ describe('PostIngestor: sincronizacion continua', () => {
 
   it('las respuestas anteriores al ticket no se reenvian (marca de agua)', async () => {
     const { ingestor, source, tracker } = makeIngestor();
-    source.byChannel.set('ch-proposals', [makePost({ starterMessageId: 'm-50' })]);
-    source.threadMessages.set('th-1', [
-      makeMessage({ id: 'm-10', content: 'hablando antes de tiempo' }),
-      makeMessage({ id: 'm-40', content: 'offtopic' }),
+    source.byChannel.set('ch-proposals', [
+      makePost({
+        starterMessageId: 'm-50',
+        messages: [
+          makeMessage({ id: 'm-10', content: 'hablando antes de tiempo' }),
+          makeMessage({ id: 'm-40', content: 'offtopic' }),
+          makeMessage({ id: 'm-50', content: 'starter del post' }),
+        ],
+      }),
     ]);
 
     const summary = await ingestor.ingestNewPosts([proposalsPlan]);
@@ -356,9 +395,13 @@ describe('PostIngestor: sincronizacion continua', () => {
       post: { channelId: 'ch-proposals', threadId: 'th-1', requiredTag: 'Aceptado', doneTag: null },
     });
     // Historial preexistente en el hilo: NO debe reenviarse como comentarios.
-    source.threadMessages.set('th-1', [
-      makeMessage({ id: 'm-1', content: 'comentario viejo 1' }),
-      makeMessage({ id: 'm-2', content: 'comentario viejo 2' }),
+    source.byChannel.set('ch-proposals', [
+      makePost({
+        messages: [
+          makeMessage({ id: 'm-1', content: 'comentario viejo 1' }),
+          makeMessage({ id: 'm-2', content: 'comentario viejo 2' }),
+        ],
+      }),
     ]);
 
     const summary = await ingestor.ingestNewPosts([proposalsPlan]);
@@ -371,10 +414,14 @@ describe('PostIngestor: sincronizacion continua', () => {
     expect(saved[0]?.post?.lastCommentId).toBe('m-2');
 
     // Y en el ciclo siguiente, una respuesta SI se reenvia.
-    source.threadMessages.set('th-1', [
-      makeMessage({ id: 'm-1', content: 'comentario viejo 1' }),
-      makeMessage({ id: 'm-2', content: 'comentario viejo 2' }),
-      makeMessage({ id: 'm-3', content: 'respuesta nueva' }),
+    source.byChannel.set('ch-proposals', [
+      makePost({
+        messages: [
+          makeMessage({ id: 'm-1', content: 'comentario viejo 1' }),
+          makeMessage({ id: 'm-2', content: 'comentario viejo 2' }),
+          makeMessage({ id: 'm-3', content: 'respuesta nueva' }),
+        ],
+      }),
     ]);
     const second = await ingestor.ingestNewPosts([proposalsPlan]);
     expect(second.comments).toBe(1);

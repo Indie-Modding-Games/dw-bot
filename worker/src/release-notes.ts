@@ -4,7 +4,7 @@
  * actualizacion en el canal de backlog cuando detecta una version nueva.
  * (Formato AAAA.MM.DD.n — n increments el mismo dia.)
  */
-export const DEVBOT_RELEASE = '2026.11.08.1';
+export const DEVBOT_RELEASE = '2026.11.08.2';
 
 export const RELEASE_NOTES: Record<string, string[]> = {
   '2026.11.08.1': [
@@ -13,6 +13,12 @@ export const RELEASE_NOTES: Record<string, string[]> = {
     'Las respuestas del post se reenvian como comentarios de la issue',
     'Cuando el ticket llega a done, el post se etiqueta y se archiva (fuera de busquedas)',
     'Este mensaje: aviso automatico al quedarse actualizado (desactivable con DEVBOT_ANNOUNCE_ON_UPDATE=0)',
+  ],
+  '2026.11.08.2': [
+    'Ya no quedan issues "sin texto": si un ciclo no puede leer el post, la issue NO se toca y el siguiente ciclo la repara con el primer mensaje actual del OP',
+    'Los tickets de posts viejos (Aceptado / En revision) se refrescan solos con el contenido actual del primer mensaje',
+    'Mitad de llamadas a Discord por ciclo: una sola lectura por post cubre mensaje inicial y respuestas',
+    'Reintento automatico cuando Discord aplica rate-limit (HTTP 429 con Retry-After)',
   ],
 };
 

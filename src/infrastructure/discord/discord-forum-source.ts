@@ -78,23 +78,33 @@ export class DiscordForumSource implements ForumPostSourcePort {
       if (thread.archived) continue;
       if (!thread.appliedTags.includes(tag.id)) continue;
 
+      let description: string | null = null;
+      let authorName = 'desconocido';
+      let attachments: PostAttachment[] = [];
+      let starterMessageId: string | null = null;
+
       // El mensaje inicial no esta en todos los tipos de hilo: acceso defensivo.
       const maybeWithInitial = thread as Partial<{
         fetchInitialMessage: () => Promise<Message | null>;
       }>;
-      let description = '_(post sin texto)_';
-      let authorName = 'desconocido';
-      let attachments: PostAttachment[] = [];
-      let starterMessageId: string | null = null;
       if (typeof maybeWithInitial.fetchInitialMessage === 'function') {
         const initial = await maybeWithInitial.fetchInitialMessage().catch(() => null);
         if (initial) {
-          description = initial.content.slice(0, 3500) || description;
-          authorName = initial.author.username ?? authorName;
+          const text = initial.content.slice(0, 3500);
+          description = text || '_(post sin texto)_';
+          authorName = initial.author.username;
           attachments = toPostAttachments(initial);
           starterMessageId = initial.id;
         }
       }
+      // description null = no legible este ciclo: la issue conserva su cuerpo.
+      const messages = await thread.messages
+        .fetch({ limit: 100 })
+        .then((page) =>
+          // Collection del mas nuevo al mas viejo -> orden cronologico.
+          [...page.values()].reverse().map(toThreadMessage),
+        )
+        .catch(() => null);
 
       posts.push({
         channelId,
@@ -104,24 +114,12 @@ export class DiscordForumSource implements ForumPostSourcePort {
         authorName,
         attachments,
         starterMessageId,
+        messages,
         postUrl: `https://discord.com/channels/${channel.guild.id}/${thread.id}`,
       });
     }
 
     return posts;
-  }
-
-  async fetchThreadMessages(
-    threadId: string,
-    afterMessageId: string | null,
-  ): Promise<ForumThreadMessage[]> {
-    const channel = await this.client.channels.fetch(threadId);
-    if (!channel || !channel.isTextBased()) return [];
-    const fetched = await channel.messages.fetch(
-      afterMessageId ? { limit: 100, after: afterMessageId } : { limit: 100 },
-    );
-    // Collection viene del mas nuevo al mas viejo: orden cronologico de salida.
-    return [...fetched.values()].reverse().map(toThreadMessage);
   }
 
   async fetchAttachmentBytes(url: string): Promise<ArrayBuffer | null> {

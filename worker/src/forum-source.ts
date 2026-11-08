@@ -64,18 +64,34 @@ export class WorkerForumSource implements ForumPostSourcePort {
       if (thread.thread_metadata?.archived) continue;
       if (!(thread.applied_tags ?? []).includes(tag.id)) continue;
 
-      let description = '_(post sin texto)_';
+      let description: string | null = null;
       let authorName = 'desconocido';
       let attachments: PostAttachment[] = [];
       let starterMessageId: string | null = null;
+      let messages: ForumThreadMessage[] | null = null;
+
       try {
-        const starter = await this.rest.getThreadStarterMessage(thread.id);
-        description = (starter?.content ?? '').slice(0, 3500) || description;
-        authorName = starter?.author?.username ?? authorName;
-        attachments = toPostAttachments(starter?.attachments);
-        starterMessageId = starter?.id ?? null;
-      } catch {
-        // Sin acceso al mensaje inicial: el nombre del post basta como ticket.
+        // UNA sola lectura del hilo: de ahi salen el mensaje inicial Y las
+        // respuestas nuevas (no se hace una segunda llamada por post).
+        const page = await this.rest.fetchThreadMessages(thread.id, null);
+        if (page.length > 0) {
+          messages = page.map(toThreadMessage);
+          // Orden cronologico: el starter es el primero.
+          const starter = messages[0] as ForumThreadMessage;
+          starterMessageId = starter.id;
+          authorName = starter.authorName;
+          attachments = starter.attachments;
+          const text = starter.content.slice(0, 3500);
+          description = text || '_(post sin texto)_';
+        }
+        // page vacio => description sigue null: NO se toca la issue (evita
+        // borrar el cuerpo por un 429/lectura fallida).
+      } catch (error) {
+        // Sin acceso al mensaje inicial: la issue conserva su contenido actual.
+        this.logger.warn(
+          { err: error, event: 'posts.starter_read_failed', threadId: thread.id },
+          'no se pudo leer el hilo este ciclo; la issue no se modifica',
+        );
       }
 
       posts.push({
@@ -86,19 +102,12 @@ export class WorkerForumSource implements ForumPostSourcePort {
         authorName,
         attachments,
         starterMessageId,
+        messages,
         postUrl: `https://discord.com/channels/${this.env.DEVBOT_GUILD_ID}/${channelId}/${thread.id}`,
       });
     }
 
     return posts;
-  }
-
-  async fetchThreadMessages(
-    threadId: string,
-    afterMessageId: string | null,
-  ): Promise<ForumThreadMessage[]> {
-    const messages = await this.rest.fetchThreadMessages(threadId, afterMessageId);
-    return messages.map(toThreadMessage);
   }
 
   async fetchAttachmentBytes(url: string): Promise<ArrayBuffer | null> {

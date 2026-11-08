@@ -16,6 +16,7 @@ import {
   type FeedbackStorePort,
   type ForumPost,
   type ForumPostSourcePort,
+  type ForumThreadMessage,
   type IssueSnapshot,
   type IssueTrackerPort,
   type PostAttachment,
@@ -82,12 +83,10 @@ export class PostIngestor {
             // Recien creado: solo reenviar respuestas nuevas del post (la
             // creacion ya incluyo el contenido y las capturas subidas).
             const working = this.workingCopy(created);
-            summary.comments += await this.forwardThreadComments(working);
-            if (this.wasModified(working, created)) await this.store.upsert(working);
-            recordsByThread.set(
-              post.threadId,
-              this.wasModified(working, created) ? working : created,
-            );
+            summary.comments += await this.forwardThreadComments(working, post.messages);
+            const modified = this.wasModified(working, created);
+            if (modified) await this.store.upsert(working);
+            recordsByThread.set(post.threadId, modified ? working : created);
           } else {
             const sync = await this.syncPostChanges(post, existing);
             summary.updated += sync.updated;
@@ -130,9 +129,10 @@ export class PostIngestor {
         threadId: post.threadId,
         requiredTag: plan.requiredTag,
         doneTag: plan.doneTag,
-        // Si alguna captura queda pendiente por fallo transitorio, no se guarda
-        // la firma: el proximo tick reintentara y actualizara el cuerpo.
-        contentHash: fullyUploaded ? postSignature(post) : undefined,
+        // Si el post no era legible o alguna captura queda pendiente por fallo
+        // transitorio, no se guarda la firma: el proximo ciclo reintentara y
+        // completara el cuerpo con el contenido real del primer mensaje.
+        contentHash: fullyUploaded && post.description !== null ? postSignature(post) : undefined,
         starterMessageId: post.starterMessageId,
         // Marca de agua inicial: las respuestas anteriores al ticket NO se reenvian.
         lastCommentId: post.starterMessageId,
@@ -162,7 +162,15 @@ export class PostIngestor {
     const working = this.workingCopy(record);
 
     // 1) Respuestas nuevas del hilo -> comentarios de la issue.
-    const comments = await this.forwardThreadComments(working);
+    const comments = await this.forwardThreadComments(working, post.messages);
+
+    // Post no legible ESTE ciclo (429, sin acceso): jamas se toca el cuerpo de
+    // la issue, para no sobrescribir contenido real con placeholders. La firma
+    // vieja queda intacta y el proximo ciclo lo repara con el texto actual.
+    if (post.description === null) {
+      if (this.wasModified(working, record)) await this.store.upsert(working);
+      return { updated: 0, comments, record: working };
+    }
 
     // 2) Edicion del post: comparar firma de contenido (titulo+texto+adjuntos).
     const signature = postSignature(post);
@@ -252,44 +260,28 @@ export class PostIngestor {
 
   /**
    * Reenvia las respuestas nuevas del hilo como comentarios de la issue.
+   * Usa los mensajes YA leidos con el post (cero llamadas extra a Discord).
    * Avanza la marca de agua solo con envios exitosos (sin spam ni duplicados).
    */
-  private async forwardThreadComments(record: TrackedFeedback): Promise<number> {
+  private async forwardThreadComments(
+    record: TrackedFeedback,
+    messages: ForumThreadMessage[] | null,
+  ): Promise<number> {
     const postInfo = record.post;
-    if (!postInfo) return 0;
+    if (!postInfo || messages === null) return 0;
 
-    if (postInfo.lastCommentId === undefined || postInfo.lastCommentId === null) {
-      // Marca de agua desconocida (registro heredado o starter no legible):
-      // fijarla en el ultimo mensaje actual SIN reenviar el historial.
-      try {
-        const all = await this.postSource.fetchThreadMessages(postInfo.threadId, null);
-        postInfo.lastCommentId = newestMessageId(all.map((message) => message.id));
-      } catch (error) {
-        this.logger.warn(
-          { err: error, event: 'posts.watermark_failed', threadId: postInfo.threadId },
-          'no se pudo fijar la marca de agua del hilo; se reintentara',
-        );
-      }
-      return 0;
-    }
-
-    let messages;
-    try {
-      messages = await this.postSource.fetchThreadMessages(
-        postInfo.threadId,
-        postInfo.lastCommentId,
-      );
-    } catch (error) {
-      this.logger.warn(
-        { err: error, event: 'posts.thread_read_failed', threadId: postInfo.threadId },
-        'no se pudo leer el hilo para sincronizar respuestas',
-      );
+    const watermark = postInfo.lastCommentId;
+    if (watermark === undefined || watermark === null) {
+      // Marca de agua desconocida (registro heredado o post no legible al
+      // crear): fijarla en el mensaje mas reciente leido SIN reenviar historial.
+      postInfo.lastCommentId = newestMessageId(messages.map((message) => message.id));
       return 0;
     }
 
     const relevant = messages
       .filter((message) => !message.isBot && message.type === 0)
       .filter((message) => message.content.trim() !== '' || message.attachments.length > 0)
+      .filter((message) => isAfter(message.id, watermark))
       .slice(0, MAX_COMMENTS_PER_SYNC);
 
     let forwarded = 0;

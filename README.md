@@ -98,6 +98,11 @@ en cada ciclo:
 - **Post editado** (titulo, texto o capturas nuevas): la firma de contenido
   (hash del titulo+texto+IDs de adjuntos) cambia y el bot actualiza el
   titulo/cuerpo de la issue. Las issues ya cerradas no se reabren por ediciones.
+- **Lecturas fallidas no destruyen**: si un ciclo no puede leer el mensaje
+  inicial del post (rate-limit de Discord, sin acceso), la issue NO se toca ese
+  ciclo; el siguiente la repara con el primer mensaje actual del OP. Los posts
+  viejos monitorizados (etiquetados Aceptado/En revisión) se refrescan solos al
+  primer ciclo legible tras el deploy.
 - **Capturas y videos** adjuntos al post: se descargan del CDN de Discord y se
   **suben a GitHub** como assets de usuario (el mismo endpoint que usa el
   drag-and-drop de la web), embebiendolos en el cuerpo de la issue. Cada

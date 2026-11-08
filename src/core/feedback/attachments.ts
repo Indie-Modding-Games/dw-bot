@@ -72,7 +72,7 @@ function hashString(input: string): string {
  */
 export function postSignature(post: ForumPost): string {
   const attachmentIds = post.attachments.map((a) => a.id).join(',');
-  return hashString(`${post.title}\n${post.description}\n${attachmentIds}`);
+  return hashString(`${post.title}\n${post.description ?? ''}\n${attachmentIds}`);
 }
 
 /** true si el id de adjunto fue procesado (subido o descartado a proposito). */
@@ -114,7 +114,7 @@ function renderAttachmentsBlock(
  * texto + enlace al post original + capturas ya subidas a GitHub.
  */
 export function composePostDescription(post: ForumPost, uploaded: Record<string, string>): string {
-  const base = post.description.slice(0, MAX_ISSUE_DESCRIPTION);
+  const base = (post.description ?? '_(post sin texto)_').slice(0, MAX_ISSUE_DESCRIPTION);
   const parts = [base, '', `[Ver post original en Discord](${post.postUrl})`];
   if (post.attachments.length > 0) {
     parts.push('', '### Capturas', '', ...renderAttachmentsBlock(post.attachments, uploaded));
