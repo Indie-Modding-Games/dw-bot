@@ -23,7 +23,7 @@ export interface RestAttachment {
 export interface RestMessage {
   id: string;
   content?: string;
-  author?: { username?: string; bot?: boolean };
+  author?: { id?: string; username?: string; bot?: boolean };
   /** 0 = mensaje regular; el resto son mensajes del sistema. */
   type?: number;
   timestamp?: string;

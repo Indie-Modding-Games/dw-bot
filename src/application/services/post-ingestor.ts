@@ -83,7 +83,11 @@ export class PostIngestor {
             // Recien creado: solo reenviar respuestas nuevas del post (la
             // creacion ya incluyo el contenido y las capturas subidas).
             const working = this.workingCopy(created);
-            summary.comments += await this.forwardThreadComments(working, post.messages);
+            summary.comments += await this.forwardThreadComments(
+              working,
+              post.messages,
+              post.watermarkMessageId,
+            );
             const modified = this.wasModified(working, created);
             if (modified) await this.store.upsert(working);
             recordsByThread.set(post.threadId, modified ? working : created);
@@ -134,8 +138,9 @@ export class PostIngestor {
         // completara el cuerpo con el contenido real del primer mensaje.
         contentHash: fullyUploaded && post.description !== null ? postSignature(post) : undefined,
         starterMessageId: post.starterMessageId,
-        // Marca de agua inicial: las respuestas anteriores al ticket NO se reenvian.
-        lastCommentId: post.starterMessageId,
+        // Marca de agua inicial: las respuestas anteriores al ticket (y el
+        // mensaje del que se tomo el cuerpo) NO se reenvian.
+        lastCommentId: post.watermarkMessageId ?? post.starterMessageId,
       },
     };
     await this.store.upsert(record);
@@ -162,7 +167,11 @@ export class PostIngestor {
     const working = this.workingCopy(record);
 
     // 1) Respuestas nuevas del hilo -> comentarios de la issue.
-    const comments = await this.forwardThreadComments(working, post.messages);
+    const comments = await this.forwardThreadComments(
+      working,
+      post.messages,
+      post.watermarkMessageId,
+    );
 
     // Post no legible ESTE ciclo (429, sin acceso): jamas se toca el cuerpo de
     // la issue, para no sobrescribir contenido real con placeholders. La firma
@@ -261,11 +270,14 @@ export class PostIngestor {
   /**
    * Reenvia las respuestas nuevas del hilo como comentarios de la issue.
    * Usa los mensajes YA leidos con el post (cero llamadas extra a Discord).
+   * `bodySourceMessageId` (el mensaje del que se tomo el cuerpo de la issue,
+   * starter o fallback del OP) nunca se reenvia: no duplicar el cuerpo.
    * Avanza la marca de agua solo con envios exitosos (sin spam ni duplicados).
    */
   private async forwardThreadComments(
     record: TrackedFeedback,
     messages: ForumThreadMessage[] | null,
+    bodySourceMessageId: string | null,
   ): Promise<number> {
     const postInfo = record.post;
     if (!postInfo || messages === null) return 0;
@@ -279,6 +291,7 @@ export class PostIngestor {
     }
 
     const relevant = messages
+      .filter((message) => message.id !== bodySourceMessageId)
       .filter((message) => !message.isBot && message.type === 0)
       .filter((message) => message.content.trim() !== '' || message.attachments.length > 0)
       .filter((message) => isAfter(message.id, watermark))

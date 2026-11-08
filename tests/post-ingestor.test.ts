@@ -41,6 +41,7 @@ function makePost(overrides: Partial<ForumPost> = {}): ForumPost {
     postUrl: 'https://discord.com/channels/g/ch-proposals/th-1',
     attachments: [],
     starterMessageId: 'm-1',
+    watermarkMessageId: 'm-1',
     messages: [],
     ...overrides,
   };
@@ -51,6 +52,7 @@ function makeMessage(overrides: Partial<ForumThreadMessage> = {}): ForumThreadMe
     id: 'm-2',
     content: 'Tambien hace falta en el editor',
     authorName: 'otro',
+    authorId: 'u-otro',
     createdAt: '2026-11-08T10:00:00.000Z',
     isBot: false,
     type: 0,
@@ -280,6 +282,52 @@ describe('PostIngestor: sincronizacion continua', () => {
     expect(tracker.updates).toHaveLength(1);
   });
 
+  it('el mensaje usado como cuerpo no se duplica como comentario en registros viejos', async () => {
+    const { ingestor, source, tracker } = makeIngestor();
+    // Ticket creado cuando el starter tenia texto normal.
+    source.byChannel.set('ch-proposals', [makePost()]);
+    await ingestor.ingestNewPosts([proposalsPlan]);
+
+    // Ahora el cuerpo se toma del mensaje m-3 del OP (watermark viejo sigue en
+    // m-1): m-2 se reenvia, m-3 NO (es el cuerpo), m-4 se reenvia.
+    source.byChannel.set('ch-proposals', [
+      makePost({
+        description: 'texto del OP en el chat',
+        watermarkMessageId: 'msg-3',
+        messages: [
+          makeMessage({ id: 'msg-1', content: '' }),
+          makeMessage({ id: 'msg-2', content: 'comentario de otro' }),
+          makeMessage({
+            id: 'msg-3',
+            content: 'texto del OP en el chat',
+            authorName: 'usuario1',
+            authorId: 'u-op',
+          }),
+          makeMessage({
+            id: 'msg-4',
+            content: 'otra respuesta',
+            authorName: 'otro',
+            authorId: 'u-otro',
+          }),
+        ],
+      }),
+    ]);
+    const summary = await ingestor.ingestNewPosts([proposalsPlan]);
+
+    expect(summary.updated).toBe(1);
+    expect(summary.comments).toBe(2);
+    const bodies = tracker.comments.map((c) => c.body);
+    expect(bodies.some((b) => b.includes('texto del OP en el chat'))).toBe(false);
+    expect(bodies.some((b) => b.includes('comentario de otro'))).toBe(true);
+    expect(bodies.some((b) => b.includes('otra respuesta'))).toBe(true);
+    expect(tracker.updates[0]?.body).toContain('texto del OP en el chat');
+
+    // Y nada se repite en el ciclo siguiente.
+    const second = await ingestor.ingestNewPosts([proposalsPlan]);
+    expect(second.comments).toBe(0);
+    expect(tracker.comments).toHaveLength(2);
+  });
+
   it('un post no legible este ciclo NO toca la issue (y el siguiente la repara)', async () => {
     const { ingestor, source, tracker } = makeIngestor();
     source.byChannel.set('ch-proposals', [makePost()]);
@@ -354,11 +402,12 @@ describe('PostIngestor: sincronizacion continua', () => {
     const { ingestor, source, tracker } = makeIngestor();
     source.byChannel.set('ch-proposals', [
       makePost({
-        starterMessageId: 'm-50',
+        starterMessageId: 'msg-50',
+        watermarkMessageId: 'msg-50',
         messages: [
-          makeMessage({ id: 'm-10', content: 'hablando antes de tiempo' }),
-          makeMessage({ id: 'm-40', content: 'offtopic' }),
-          makeMessage({ id: 'm-50', content: 'starter del post' }),
+          makeMessage({ id: 'msg-10', content: 'hablando antes de tiempo' }),
+          makeMessage({ id: 'msg-40', content: 'offtopic' }),
+          makeMessage({ id: 'msg-50', content: 'starter del post' }),
         ],
       }),
     ]);

@@ -23,11 +23,23 @@ function toThreadMessage(message: RestMessage): ForumThreadMessage {
     id: message.id,
     content: message.content ?? '',
     authorName: message.author?.username ?? 'desconocido',
+    authorId: message.author?.id ?? null,
     createdAt: message.timestamp ?? new Date().toISOString(),
     isBot: message.author?.bot === true,
     type: message.type ?? 0,
     attachments: toPostAttachments(message.attachments),
   };
+}
+
+function dedupeAttachments(list: PostAttachment[]): PostAttachment[] {
+  const seen = new Set<string>();
+  const out: PostAttachment[] = [];
+  for (const attachment of list) {
+    if (seen.has(attachment.id)) continue;
+    seen.add(attachment.id);
+    out.push(attachment);
+  }
+  return out;
 }
 
 /** Lee posts etiquetados de canales de FORO via REST puro. */
@@ -68,11 +80,12 @@ export class WorkerForumSource implements ForumPostSourcePort {
       let authorName = 'desconocido';
       let attachments: PostAttachment[] = [];
       let starterMessageId: string | null = null;
+      let watermarkMessageId: string | null = null;
       let messages: ForumThreadMessage[] | null = null;
 
       try {
-        // UNA sola lectura del hilo: de ahi salen el mensaje inicial Y las
-        // respuestas nuevas (no se hace una segunda llamada por post).
+        // UNA sola lectura del hilo: de ahi salen el mensaje inicial, el
+        // texto de respaldo del OP y las respuestas nuevas.
         const page = await this.rest.fetchThreadMessages(thread.id, null);
         if (page.length > 0) {
           messages = page.map(toThreadMessage);
@@ -81,8 +94,33 @@ export class WorkerForumSource implements ForumPostSourcePort {
           starterMessageId = starter.id;
           authorName = starter.authorName;
           attachments = starter.attachments;
-          const text = starter.content.slice(0, 3500);
-          description = text || '_(post sin texto)_';
+
+          let text = starter.content;
+          let source = starter;
+          if (!text.trim()) {
+            // Mensaje inicial vacio: el OP escribio en el chat del post.
+            // Tomar su primer mensaje con texto (y sus adjuntos) como cuerpo.
+            const opFollow = messages
+              .slice(1)
+              .find(
+                (m) =>
+                  !m.isBot &&
+                  m.type === 0 &&
+                  m.content.trim() !== '' &&
+                  (starter.authorId !== null
+                    ? m.authorId === starter.authorId
+                    : m.authorName === starter.authorName),
+              );
+            if (opFollow) {
+              text = opFollow.content;
+              source = opFollow;
+              attachments = dedupeAttachments([...starter.attachments, ...opFollow.attachments]);
+            }
+          }
+
+          description = text.slice(0, 3500) || '_(post sin texto)_';
+          // No reenviar como comentario el mensaje del que ya se tomo el cuerpo.
+          watermarkMessageId = source.id;
         }
         // page vacio => description sigue null: NO se toca la issue (evita
         // borrar el cuerpo por un 429/lectura fallida).
@@ -102,6 +140,7 @@ export class WorkerForumSource implements ForumPostSourcePort {
         authorName,
         attachments,
         starterMessageId,
+        watermarkMessageId,
         messages,
         postUrl: `https://discord.com/channels/${this.env.DEVBOT_GUILD_ID}/${channelId}/${thread.id}`,
       });

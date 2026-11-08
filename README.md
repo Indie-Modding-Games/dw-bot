@@ -98,6 +98,8 @@ en cada ciclo:
 - **Post editado** (titulo, texto o capturas nuevas): la firma de contenido
   (hash del titulo+texto+IDs de adjuntos) cambia y el bot actualiza el
   titulo/cuerpo de la issue. Las issues ya cerradas no se reabren por ediciones.
+  Si el mensaje inicial esta vacio, el cuerpo se toma del **primer mensaje con
+  texto del OP en el chat del post** (ese mensaje no se duplica como comentario).
 - **Lecturas fallidas no destruyen**: si un ciclo no puede leer el mensaje
   inicial del post (rate-limit de Discord, sin acceso), la issue NO se toca ese
   ciclo; el siguiente la repara con el primer mensaje actual del OP. Los posts

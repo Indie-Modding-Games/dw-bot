@@ -147,6 +147,8 @@ export interface ForumThreadMessage {
   id: string;
   content: string;
   authorName: string;
+  /** Snowflake del autor (para emparejar mensajes del OP). */
+  authorId: string | null;
   /** ISO del mensaje. */
   createdAt: string;
   isBot: boolean;
@@ -169,6 +171,12 @@ export interface ForumPost {
   attachments: PostAttachment[];
   /** ID del mensaje inicial; null si no se pudo leer el post. */
   starterMessageId: string | null;
+  /**
+   * ID del ultimo mensaje consumido para armar la descripcion (el starter o,
+   * si estaba vacio, el primer mensaje con texto del OP en el chat del hilo).
+   * Marca de agua inicial: ese mensaje no debe reenviarse como comentario.
+   */
+  watermarkMessageId: string | null;
   /**
    * Ultimos mensajes del hilo leidos en la MISMA pasada que el post, en orden
    * cronologico (null si fallo la lectura). El ingestor saca de aqui las

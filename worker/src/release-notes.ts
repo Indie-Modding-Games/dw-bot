@@ -4,7 +4,7 @@
  * actualizacion en el canal de backlog cuando detecta una version nueva.
  * (Formato AAAA.MM.DD.n — n increments el mismo dia.)
  */
-export const DEVBOT_RELEASE = '2026.11.08.2';
+export const DEVBOT_RELEASE = '2026.11.08.3';
 
 export const RELEASE_NOTES: Record<string, string[]> = {
   '2026.11.08.1': [
