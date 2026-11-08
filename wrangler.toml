@@ -36,7 +36,7 @@ DEVBOT_SUGGESTION_LABELS = "enhancement"
 # ID de GraphQL del proyecto GitHub (Projects v2) donde asignar cada issue
 # creada o actualizada. Obtenerlo con scripts/debug-github-projects.mjs
 # (requiere que el token tenga acceso a Projects). Vacio = no asignar.
-DEVBOT_GITHUB_PROJECT_ID = ""
+DEVBOT_GITHUB_PROJECT_ID = "PVT_kwDOFInM5s4Bp29r"
 # Aviso automatico en el canal de backlog cuando Andromon estrena version
 # (worker/src/release-notes.ts). Apagar con "0".
 DEVBOT_ANNOUNCE_ON_UPDATE = "1"
