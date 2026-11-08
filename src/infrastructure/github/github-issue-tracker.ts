@@ -1,8 +1,10 @@
 import type { Logger } from 'pino';
+import { buildIssueBody } from '../../core/feedback/issue-body.js';
 import {
   type FeedbackReport,
   type IssueSnapshot,
   type IssueTrackerPort,
+  type UploadedFile,
 } from '../../core/feedback/types.js';
 
 export interface GithubTrackerConfig {
@@ -40,6 +42,7 @@ interface RawGithubIssue {
  */
 export class GithubIssueTracker implements IssueTrackerPort {
   private readonly baseUrl: string;
+  private repoId?: string;
 
   constructor(
     private readonly config: GithubTrackerConfig,
@@ -95,6 +98,81 @@ export class GithubIssueTracker implements IssueTrackerPort {
     return toSnapshot(raw);
   }
 
+  async updateIssue(
+    number: number,
+    patch: { title?: string; body?: string },
+  ): Promise<IssueSnapshot> {
+    const payload: Record<string, string> = {};
+    if (patch.title !== undefined) payload.title = patch.title;
+    if (patch.body !== undefined) payload.body = patch.body;
+    const response = await fetch(`${this.baseUrl}/issues/${number}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
+    const raw = (await this.readJson(response, `actualizar issue #${number}`)) as RawGithubIssue;
+    return toSnapshot(raw);
+  }
+
+  async addIssueComment(issueNumber: number, body: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/issues/${issueNumber}/comments`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ body }),
+    });
+    await this.readJson(response, `comentar issue #${issueNumber}`);
+  }
+
+  /**
+   * Sube una captura como asset de usuario de GitHub (el mismo flujo que el
+   * drag-and-drop de la web y `gh --attach`). Endpoint no documentado pero
+   * estable: devuelve la URL `github.com/user-attachments/assets/...`.
+   */
+  async uploadAttachment(file: UploadedFile): Promise<string> {
+    const repoId = await this.getRepoId();
+    const url = new URL('https://uploads.github.com/user-attachments/assets');
+    url.searchParams.set('name', file.name);
+    url.searchParams.set('content_type', file.contentType);
+    url.searchParams.set('repository_id', repoId);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.config.token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/octet-stream',
+        'User-Agent': 'devbot-feedback',
+      },
+      body: file.bytes,
+    });
+    const data = (await this.readJson(
+      response,
+      `subir adjunto ${file.name} (${file.bytes.byteLength} bytes)`,
+    )) as { url?: string };
+    if (!data.url) {
+      throw new Error(`GitHub no devolvio URL de asset al subir ${file.name}`);
+    }
+    this._logger.info(
+      { event: 'github.attachment_uploaded', name: file.name, bytes: file.bytes.byteLength },
+      'captura subida a GitHub',
+    );
+    return data.url;
+  }
+
+  /** ID numerico del repo (el upload de assets lo exige); se resuelve una vez. */
+  private async getRepoId(): Promise<string> {
+    if (this.repoId !== undefined) return this.repoId;
+    const response = await fetch(this.baseUrl, { headers: this.headers() });
+    const data = (await this.readJson(response, `leer repo ${this.config.repo}`)) as {
+      id?: number;
+    };
+    if (typeof data.id !== 'number') {
+      throw new Error(`no se pudo obtener el ID numerico del repo ${this.config.repo}`);
+    }
+    this.repoId = String(data.id);
+    return this.repoId;
+  }
+
   private headers(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.config.token}`,
@@ -125,18 +203,4 @@ function toSnapshot(raw: RawGithubIssue): IssueSnapshot {
     updatedAt: raw.updated_at,
     closedAt: raw.closed_at ?? null,
   };
-}
-
-function buildIssueBody(report: FeedbackReport): string {
-  const heading = report.kind === 'bug' ? 'Bug report' : 'Suggestion';
-  return [
-    `### ${heading} (via DevBot)`,
-    '',
-    report.description,
-    '',
-    '---',
-    `Reportado por: ${report.reportedByName} (\`${report.reportedById}\`)`,
-    `Fecha: ${new Date().toISOString()}`,
-    '_Creado automaticamente por DevBot desde Discord._',
-  ].join('\n');
 }

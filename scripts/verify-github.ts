@@ -80,3 +80,48 @@ if (writeRes.ok) {
   const detail = await writeRes.text();
   console.error('   detalle:', detail.slice(0, 400));
 }
+
+// Verificacion opcional del upload de capturas (endpoint no documentado
+// uploads.github.com/user-attachments). Sube un PNG 1x1 de prueba:
+//   DEVBOT_VERIFY_UPLOAD=1 npx tsx scripts/verify-github.ts
+if (process.env.DEVBOT_VERIFY_UPLOAD === '1') {
+  const metaRes = await fetch(`https://api.github.com/repos/${repo}`, { headers });
+  const meta = (await metaRes.json()) as { id?: number };
+  if (typeof meta.id !== 'number') {
+    console.error('upload: no se pudo obtener el ID numerico del repo');
+  } else {
+    // PNG 1x1 transparente (67 bytes).
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const uploadUrl =
+      `https://uploads.github.com/user-attachments/assets?name=devbot-verify.png` +
+      `&content_type=image/png&repository_id=${meta.id}`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/octet-stream',
+        'User-Agent': 'devbot-verify',
+      },
+      body: png,
+    });
+    const ok = uploadRes.status === 201;
+    console.log(
+      `upload de capturas (user-attachments): HTTP ${uploadRes.status} ${ok ? 'OK' : 'FALLO'}`,
+    );
+    if (ok) {
+      const data = (await uploadRes.json()) as { url?: string };
+      console.log('   asset creado (no se usa, es solo diagnostico):', data.url);
+    } else {
+      const detail = await uploadRes.text();
+      console.error(
+        '   detalle:',
+        detail.slice(0, 400),
+        '\n   pista: si es 401/403 con fine-grained PAT, prueba classic PAT o GitHub App',
+      );
+    }
+  }
+}

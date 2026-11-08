@@ -55,6 +55,8 @@ class FakeTracker implements IssueTrackerPort {
   /** Responder para lecturas puntuales (reintentos fuera de la ventana since). */
   byNumber: IssueSnapshot[] = [];
   sinceQueries: Date[] = [];
+  updates: Array<{ number: number; patch: { title?: string; body?: string } }> = [];
+  comments: Array<{ number: number; body: string }> = [];
 
   async createIssue(report: FeedbackReport): Promise<IssueSnapshot> {
     this.created.push(report);
@@ -66,6 +68,19 @@ class FakeTracker implements IssueTrackerPort {
   }
   async getIssue(number: number): Promise<IssueSnapshot | null> {
     return this.byNumber.find((item) => item.number === number) ?? null;
+  }
+  async updateIssue(
+    number: number,
+    patch: { title?: string; body?: string },
+  ): Promise<IssueSnapshot> {
+    this.updates.push({ number, patch });
+    return makeIssue({ title: patch.title ?? makeIssue().title });
+  }
+  async addIssueComment(issueNumber: number, body: string): Promise<void> {
+    this.comments.push({ number: issueNumber, body });
+  }
+  async uploadAttachment(): Promise<string> {
+    return 'https://github.com/user-attachments/assets/x';
   }
 }
 

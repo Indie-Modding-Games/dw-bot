@@ -9,8 +9,9 @@ import { logger } from './logger.js';
  * Andromon en Cloudflare Workers (costo $0):
  * - POST /interactions: Discord llama aqui con cada slash command
  *   (Interactions Endpoint; sin gateway, sin servidor permanente).
- * - Cron trigger cada 5 min: ingesta de posts de foro + sincronizacion
- *   GitHub -> Discord (mismos servicios que la version local).
+ * - Cron trigger cada 5 min: ingesta y sincronizacion de posts de foro
+ *   (ediciones y respuestas -> GitHub, con capturas subidas como assets) +
+ *   sincronizacion GitHub -> Discord (mismos servicios que la version local).
  */
 export default {
   async fetch(request, env): Promise<Response> {
@@ -79,10 +80,10 @@ export default {
     try {
       if (services.ingestor && services.plans.length > 0) {
         const ingestion = await services.ingestor.ingestNewPosts(services.plans);
-        if (ingestion.created > 0) {
+        if (ingestion.created > 0 || ingestion.updated > 0 || ingestion.comments > 0) {
           logger.info(
             { event: 'posts.ingest', ...ingestion },
-            'posts de foro ingeridos al backlog',
+            'posts de foro sincronizados con el backlog (creaciones/ediciones/respuestas)',
           );
         }
       }

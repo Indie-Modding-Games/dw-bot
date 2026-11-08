@@ -81,6 +81,31 @@ El bot lee dos **canales de foro** de Discord y convierte posts en tickets:
 sin esperar al cron. La ingesta es idempotente: un post ya convertido nunca se
 duplica (se rastrea por ID de post en `data/feedback.json`).
 
+### Sincronización continua Discord → GitHub (cada 5 min)
+
+Además de crear el ticket la primera vez, el bot **revisa los cambios del post**
+en cada ciclo:
+
+- **Post editado** (titulo, texto o capturas nuevas): la firma de contenido
+  (hash del titulo+texto+IDs de adjuntos) cambia y el bot actualiza el
+  titulo/cuerpo de la issue. Las issues ya cerradas no se reabren por ediciones.
+- **Capturas y videos** adjuntos al post: se descargan del CDN de Discord y se
+  **suben a GitHub** como assets de usuario (el mismo endpoint que usa el
+  drag-and-drop de la web), embebiendolos en el cuerpo de la issue. Cada
+  adjunto se sube UNA sola vez (se rastrea por ID); los que fallan se reintentan
+  en el proximo tick; los demasiado grandes o de tipo no soportado se listan
+  como "no disponibles" con enlace al post original.
+- **Respuestas nuevas del hilo**: se reenvian como **comentarios de la issue**
+  (autor + fecha + texto + sus capturas). Se usa una marca de agua por post,
+  asi el historial anterior a la creacion del ticket no se spamea y nada se
+  reenvia dos veces. Los mensajes del propio bot y del sistema se ignoran.
+
+Requisitos extra del token de GitHub: el upload de assets usa
+`uploads.github.com/user-attachments` con el mismo `DEVBOT_GITHUB_TOKEN`.
+Con PAT classic funciona; si usas fine-grained y el upload devuelve 401/403,
+prueba con un token classic o un GitHub App. Si una subida falla, el bot lo
+registra en el log (`posts.attachment_upload_failed`) y reintenta solo.
+
 Nombres de etiquetas y canales configurables con `DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID`,
 `DEVBOT_PROPOSALS_REQUIRED_TAG/DONE_TAG`, `DEVBOT_FEEDBACK_BUGS_CHANNEL_ID` y
 `DEVBOT_BUGS_REQUIRED_TAG`. El bot necesita en **esos foros**: View Channel,
@@ -161,12 +186,12 @@ secreto `DISCORD_PUBLIC_KEY` (se obtiene del mismo portal).
 
 Secretos del repo (_Settings → Secrets and variables → Actions_):
 
-| Secret                  | Valor                               |
-| ----------------------- | ----------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | token con **Workers Scripts: Edit** |
+| Secret                  | Valor                                                        |
+| ----------------------- | ------------------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN`  | token con **Workers Scripts: Edit**                          |
 | `CLOUDFLARE_ACCOUNT_ID` | ID de cuenta (32 hex, **sin espacios ni comillas al pegar**) |
 
-Un paso de *Sanity de credenciales* valida el formato antes del deploy y lo
+Un paso de _Sanity de credenciales_ valida el formato antes del deploy y lo
 anota rojo si hay espacios/caracteres inválidos o falta el secret.
 Con eso, cada push a `main` hace test + `wrangler deploy` automáticamente.
 

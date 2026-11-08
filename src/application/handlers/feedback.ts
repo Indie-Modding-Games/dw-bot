@@ -100,13 +100,13 @@ export async function handleSyncNow(ctx: CommandContext, deps: SyncNowDeps): Pro
     const ingestion =
       deps.ingestor && deps.plans.length > 0
         ? await deps.ingestor.ingestNewPosts(deps.plans)
-        : { scanned: 0, created: 0 };
+        : { scanned: 0, created: 0, updated: 0, comments: 0 };
     const sync = await deps.service.syncUpdatedIssues();
 
     await ctx.reply(
       [
         '🔄 **Ciclo de sincronizacion completado**',
-        `Foros: posts revisados ${ingestion.scanned} · tickets nuevos ${ingestion.created}`,
+        `Discord → GitHub: posts revisados ${ingestion.scanned} · tickets nuevos ${ingestion.created} · posts editados ${ingestion.updated} · respuestas reenviadas ${ingestion.comments}`,
         `GitHub → Discord: fichas actualizadas ${sync.cardUpdates} · avisos de estado ${sync.stateChanges} · etiquetas cambiadas ${sync.tagSwaps}`,
       ].join('\n'),
       { ephemeral: true },

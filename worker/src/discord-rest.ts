@@ -12,10 +12,22 @@ export interface RestChannel {
   thread_metadata?: { archived?: boolean };
 }
 
+export interface RestAttachment {
+  id: string;
+  filename: string;
+  url: string;
+  content_type?: string;
+  size?: number;
+}
+
 export interface RestMessage {
   id: string;
   content?: string;
-  author?: { username?: string };
+  author?: { username?: string; bot?: boolean };
+  /** 0 = mensaje regular; el resto son mensajes del sistema. */
+  type?: number;
+  timestamp?: string;
+  attachments?: RestAttachment[];
 }
 
 export class DiscordRest {
@@ -77,6 +89,27 @@ export class DiscordRest {
     );
     if (!Array.isArray(messages) || messages.length === 0) return null;
     return messages[messages.length - 1] ?? null;
+  }
+
+  /**
+   * Mensajes del hilo mas recientes que `afterId` (null = ultimos 100).
+   * La API los envia del mas nuevo al mas viejo; se devuelven en orden cronologico.
+   */
+  async fetchThreadMessages(threadId: string, afterId: string | null): Promise<RestMessage[]> {
+    const query = afterId === null ? 'limit=100' : `after=${afterId}&limit=100`;
+    const messages = await this.request<RestMessage[]>(
+      'GET',
+      `/channels/${threadId}/messages?${query}`,
+    );
+    if (!Array.isArray(messages)) return [];
+    return [...messages].reverse();
+  }
+
+  /** Descarga un adjunto del CDN de Discord (los asset publicos no requieren token). */
+  async downloadAttachment(url: string): Promise<ArrayBuffer | null> {
+    const response = await fetch(url, { headers: { 'User-Agent': 'devbot-feedback' } });
+    if (!response.ok) return null;
+    return await response.arrayBuffer();
   }
 
   setThreadAppliedTags(threadId: string, tagIds: string[]): Promise<unknown> {

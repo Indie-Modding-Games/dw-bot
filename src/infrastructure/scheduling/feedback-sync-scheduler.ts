@@ -30,10 +30,10 @@ export function startFeedbackSyncScheduler(
       try {
         if (postIngestor && plans && plans.length > 0) {
           const ingestion = await postIngestor.ingestNewPosts(plans);
-          if (ingestion.created > 0) {
+          if (ingestion.created > 0 || ingestion.updated > 0 || ingestion.comments > 0) {
             logger.info(
               { event: 'posts.ingest', ...ingestion },
-              'posts de foro ingeridos al backlog',
+              'posts de foro sincronizados con el backlog (creaciones/ediciones/respuestas)',
             );
           }
         }

@@ -52,12 +52,28 @@ export function statusChanged(previous: IssueSnapshot, current: IssueSnapshot): 
   return previous.state !== current.state || previous.stateReason !== current.stateReason;
 }
 
+/** Archivo (captura/video) listo para subir como asset de usuario de GitHub. */
+export interface UploadedFile {
+  name: string;
+  contentType: string;
+  bytes: ArrayBuffer;
+}
+
 /** Puerto: donde vive el backlog (implementado por GitHub en infraestructura). */
 export interface IssueTrackerPort {
   createIssue(report: FeedbackReport): Promise<IssueSnapshot>;
   listIssuesUpdatedSince(since: Date): Promise<IssueSnapshot[]>;
   /** Lectura puntual (reintentos de swaps que cayeron fuera de la ventana `since`). */
   getIssue(number: number): Promise<IssueSnapshot | null>;
+  /** Edita titulo y/o cuerpo de una issue existente (post de foro editado). */
+  updateIssue(number: number, patch: { title?: string; body?: string }): Promise<IssueSnapshot>;
+  /** Publica un comentario en la issue (respuestas del post de foro). */
+  addIssueComment(issueNumber: number, body: string): Promise<void>;
+  /**
+   * Sube un archivo (captura, video) como asset de usuario de GitHub y
+   * devuelve la URL markdown-ready (`https://github.com/user-attachments/...`).
+   */
+  uploadAttachment(attachment: UploadedFile): Promise<string>;
 }
 
 /** Plan de ingestion de un canal de foro hacia el backlog. */
@@ -103,6 +119,38 @@ export interface TrackedPostInfo {
   requiredTag: string;
   /** Etiqueta a aplicar cuando el ticket pasa a done; null = no swap. */
   doneTag: string | null;
+  /**
+   * Firma del post (titulo + texto + IDs de adjuntos) en la ultima
+   * sincronizacion exitosa; cambia cuando el autor edito el post.
+   */
+  contentHash?: string;
+  /** ID del mensaje inicial: marca de agua para no reenviar el historial. */
+  starterMessageId?: string | null;
+  /** ID del ultimo mensaje del hilo ya reenviado como comentario. */
+  lastCommentId?: string | null;
+}
+
+/** Archivo adjunto (captura, video...) del mensaje inicial o de una respuesta. */
+export interface PostAttachment {
+  id: string;
+  filename: string;
+  /** URL del CDN de Discord (origen de la descarga). */
+  url: string;
+  contentType?: string | null;
+  size?: number;
+}
+
+/** Respuesta dentro del post de foro (hilo), para reenviar como comentario. */
+export interface ForumThreadMessage {
+  id: string;
+  content: string;
+  authorName: string;
+  /** ISO del mensaje. */
+  createdAt: string;
+  isBot: boolean;
+  /** Tipo de mensaje de Discord; 0 = regular (el resto son del sistema). */
+  type: number;
+  attachments: PostAttachment[];
 }
 
 /** Post de un canal de foro de Discord, leido por el adaptador. */
@@ -115,11 +163,29 @@ export interface ForumPost {
   authorName: string;
   /** URL para enlazar el post desde la issue. */
   postUrl: string;
+  /** Adjuntos del mensaje inicial (capturas subidas por el autor). */
+  attachments: PostAttachment[];
+  /** ID del mensaje inicial; null si no se pudo leer el post. */
+  starterMessageId: string | null;
+}
+
+/** Bytes descargados de un adjunto de Discord. */
+export interface UploadedFile {
+  name: string;
+  contentType: string;
+  bytes: ArrayBuffer;
 }
 
 /** Puerto: lee posts etiquetados de un canal de foro (adaptador Discord). */
 export interface ForumPostSourcePort {
   fetchPosts(channelId: string, requiredTag: string): Promise<ForumPost[]>;
+  /** Mensajes del hilo mas recientes que `afterMessageId` (null = todos). */
+  fetchThreadMessages(
+    threadId: string,
+    afterMessageId: string | null,
+  ): Promise<ForumThreadMessage[]>;
+  /** Descarga un adjunto del CDN de Discord; null si ya no existe o fallo. */
+  fetchAttachmentBytes(url: string): Promise<ArrayBuffer | null>;
 }
 
 /** true si el ticket esta cerrado y NO como "no prevista" => done. */
@@ -136,4 +202,9 @@ export interface TrackedFeedback {
   post?: TrackedPostInfo;
   /** El swap de etiqueta del post fallo y debe reintentarse en proximos ticks. */
   tagSwapPending?: boolean;
+  /**
+   * Adjuntos del post ya procesados: ID de adjunto -> URL de asset en GitHub
+   * (o `skipped` si se descarto a proposito). Evita subir la misma captura dos veces.
+   */
+  uploadedAttachments?: Record<string, string>;
 }
