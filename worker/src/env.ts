@@ -21,6 +21,8 @@ export interface Env {
   DEVBOT_GITHUB_REPO: string;
   DEVBOT_BUG_LABELS: string;
   DEVBOT_SUGGESTION_LABELS: string;
+  /** '1' (default) anuncia la version nueva en Discord tras cada deploy; '0' lo apaga. */
+  DEVBOT_ANNOUNCE_ON_UPDATE?: string;
 
   // --- Bindings ---
   D1: D1Database;

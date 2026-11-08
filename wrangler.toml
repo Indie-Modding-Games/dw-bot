@@ -33,3 +33,6 @@ DEVBOT_BUGS_DONE_TAG = "✅ Arreglado"
 DEVBOT_GITHUB_REPO = "Indie-Modding-Games/dw-engine"
 DEVBOT_BUG_LABELS = "bug"
 DEVBOT_SUGGESTION_LABELS = "enhancement"
+# Aviso automatico en el canal de backlog cuando Andromon estrena version
+# (worker/src/release-notes.ts). Apagar con "0".
+DEVBOT_ANNOUNCE_ON_UPDATE = "1"

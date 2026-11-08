@@ -120,6 +120,17 @@ activo: desde ese momento deja de entrar en los ciclos de revisión (los
 reintentos de etiqueta pendientes siguen funcionando porque se resuelven por
 ID de post, no por listado).
 
+### Aviso de actualización (nueva versión → Discord)
+
+Cuando Andromon estrena versión (tras el deploy) manda solo un mensaje al canal
+de backlog tipo **"He sido actualizado a `X`. Estas son mis mejoras: …"** —
+en el primer evento que lo despierta (el cron de 5 min o el siguiente comando).
+Es idempotente: se guarda una marca en D1 y no repite el aviso hasta la
+próxima versión. Se desactiva con `DEVBOT_ANNOUNCE_ON_UPDATE=0`.
+
+Para documentar una mejora nueva: bump de `DEVBOT_RELEASE` y notas en
+`worker/src/release-notes.ts` (formato `AAAA.MM.DD.n`).
+
 Nombres de etiquetas y canales configurables con `DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID`,
 `DEVBOT_PROPOSALS_REQUIRED_TAG/DONE_TAG`, `DEVBOT_FEEDBACK_BUGS_CHANNEL_ID` y
 `DEVBOT_BUGS_REQUIRED_TAG`. El bot necesita en **esos foros**: View Channel,

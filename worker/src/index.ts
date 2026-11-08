@@ -3,18 +3,21 @@ import type { Env } from './env.js';
 import { isValidDiscordRequest } from './verify.js';
 import { handleInteraction, type InteractionPayload } from './handlers.js';
 import { buildServices } from './services.js';
+import { maybeAnnounceUpdate } from './announce.js';
+import { DiscordRest } from './discord-rest.js';
 import { logger } from './logger.js';
 
 /**
  * Andromon en Cloudflare Workers (costo $0):
  * - POST /interactions: Discord llama aqui con cada slash command
  *   (Interactions Endpoint; sin gateway, sin servidor permanente).
- * - Cron trigger cada 5 min: ingesta y sincronizacion de posts de foro
- *   (ediciones y respuestas -> GitHub, con capturas subidas como assets) +
- *   sincronizacion GitHub -> Discord (mismos servicios que la version local).
+ * - Cron trigger cada 5 min: aviso de version nueva (si procede), ingesta y
+ *   sincronizacion de posts de foro (ediciones/respuestas -> GitHub, con
+ *   capturas subidas como assets) + sincronizacion GitHub -> Discord
+ *   (mismos servicios que la version local).
  */
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method === 'POST' && url.pathname === '/interactions') {
@@ -68,6 +71,9 @@ export default {
         'firma valida',
       );
 
+      // Aviso de version nueva tras un deploy (best-effort, no bloquea la respuesta).
+      ctx.waitUntil(announceBestEffort(env));
+
       const interResponse = await handleInteraction(payload, env);
       return Response.json(interResponse);
     }
@@ -76,6 +82,9 @@ export default {
   },
 
   async scheduled(_controller, env): Promise<void> {
+    // Primera pasada tras un deploy: anuncia la version nueva (no-op despues).
+    await announceBestEffort(env);
+
     const services = buildServices(env);
     try {
       if (services.ingestor && services.plans.length > 0) {
@@ -98,3 +107,24 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * Anuncio de version sin romper nada: cualquier fallo queda solo en el log.
+ * maybeAnnounceUpdate es idempotente (marca en D1), asi que correrlo en cada
+ * evento tras un deploy manda el mensaje una unica vez.
+ */
+async function announceBestEffort(env: Env): Promise<void> {
+  try {
+    await maybeAnnounceUpdate(env, {
+      db: env.D1,
+      rest: new DiscordRest(env.DISCORD_TOKEN),
+      channelId: env.DEVBOT_FEEDBACK_CHANNEL_ID,
+      logger,
+    });
+  } catch (error) {
+    logger.warn(
+      { err: error, event: 'worker.announce_error' },
+      'el aviso de actualizacion fallo; se reintentara en el proximo evento',
+    );
+  }
+}
