@@ -30,13 +30,48 @@ export default {
       const counts = await env.D1.prepare('SELECT COUNT(*) AS n FROM feedback_records').first<{
         n: number;
       }>();
-      return Response.json({
+      const out: Record<string, unknown> = {
         release: DEVBOT_RELEASE,
         announceEnabled: env.DEVBOT_ANNOUNCE_ON_UPDATE ?? '1',
         meta: metaRows.results ?? [],
         trackedRecords: counts?.n ?? 0,
         utcNow: new Date().toISOString(),
-      });
+      };
+
+      // /debug?probe=1 -> prueba de autenticacion/permisos del token de Discord
+      // con el bot real del worker (solo lectura, no escribe).
+      if (url.searchParams.get('probe') === '1') {
+        const rest = new DiscordRest(env.DISCORD_TOKEN);
+        const probes: Record<string, string> = {};
+        for (const [label, id] of [
+          ['feedback_channel', env.DEVBOT_FEEDBACK_CHANNEL_ID],
+          ['bugs_forum', env.DEVBOT_FEEDBACK_BUGS_CHANNEL_ID ?? '-'],
+          ['proposals_forum', env.DEVBOT_FEEDBACK_PROPOSALS_CHANNEL_ID ?? '-'],
+        ] as const) {
+          if (id === '-' || !id) {
+            probes[label] = 'no configurado';
+            continue;
+          }
+          try {
+            const ch = await rest.getChannel(id);
+            probes[label] = `OK type=${ch.type} name=${ch.name ?? '?'}`;
+          } catch (error) {
+            probes[label] = `FALLO: ${(error as Error).message.slice(0, 160)}`;
+          }
+        }
+        // token valido? (la app es publica: 200 = auth OK)
+        try {
+          const auth = await fetch('https://discord.com/api/v10/users/@me', {
+            headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
+          });
+          out.discordAuth = `HTTP ${auth.status}`;
+        } catch (error) {
+          out.discordAuth = `error: ${(error as Error).message.slice(0, 120)}`;
+        }
+        out.channelProbes = probes;
+      }
+
+      return Response.json(out);
     }
 
     if (request.method === 'POST' && url.pathname === '/interactions') {
