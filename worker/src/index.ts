@@ -4,6 +4,7 @@ import { isValidDiscordRequest } from './verify.js';
 import { handleInteraction, type InteractionPayload } from './handlers.js';
 import { buildServices } from './services.js';
 import { maybeAnnounceUpdate } from './announce.js';
+import { DEVBOT_RELEASE } from './release-notes.js';
 import { DiscordRest } from './discord-rest.js';
 import { logger } from './logger.js';
 
@@ -19,6 +20,24 @@ import { logger } from './logger.js';
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+
+    // Diagnostico temporal: version desplegada + estado de cron/anuncio (sin secretos).
+    if (request.method === 'GET' && url.pathname === '/debug') {
+      const metaRows = await env.D1.prepare('SELECT key, value FROM meta').all<{
+        key: string;
+        value: string;
+      }>();
+      const counts = await env.D1.prepare('SELECT COUNT(*) AS n FROM feedback_records').first<{
+        n: number;
+      }>();
+      return Response.json({
+        release: DEVBOT_RELEASE,
+        announceEnabled: env.DEVBOT_ANNOUNCE_ON_UPDATE ?? '1',
+        meta: metaRows.results ?? [],
+        trackedRecords: counts?.n ?? 0,
+        utcNow: new Date().toISOString(),
+      });
+    }
 
     if (request.method === 'POST' && url.pathname === '/interactions') {
       const body = await request.text();
