@@ -43,6 +43,39 @@ export default {
       if (url.searchParams.get('probe') === '1') {
         const rest = new DiscordRest(env.DISCORD_TOKEN);
         const probes: Record<string, string> = {};
+
+        // ?send=1 -> intenta el anuncio real (si tiene exito, marca y avisa).
+        if (url.searchParams.get('send') === '1') {
+          try {
+            await maybeAnnounceUpdate(env, {
+              db: env.D1,
+              rest,
+              channelId: env.DEVBOT_FEEDBACK_CHANNEL_ID,
+              logger,
+            });
+            const after = await env.D1.prepare('SELECT value FROM meta WHERE key = ?1')
+              .bind('announcedRelease')
+              .first<{ value: string }>();
+            probes.announce_attempt = after?.value
+              ? `anuncio enviado y marcado (${after.value})`
+              : 'sin marca tras intentar (el send fallo; mira el log del worker)';
+          } catch (error) {
+            probes.announce_attempt = `EXCEPTION: ${(error as Error).message.slice(0, 200)}`;
+          }
+        }
+
+        // ?ping=1 -> sendText de prueba directo al canal de backlog (texto efimero de diagnostico).
+        if (url.searchParams.get('ping') === '1') {
+          try {
+            const msg = await rest.sendText(
+              env.DEVBOT_FEEDBACK_CHANNEL_ID,
+              '🩺 Diagnostico DevBot: prueba de escritura en el canal (puedo borrar esta linea de logs, no molesta)',
+            );
+            probes.sendtest = `OK msg=${msg.id}`;
+          } catch (error) {
+            probes.sendtest = `FALLO: ${(error as Error).message.slice(0, 200)}`;
+          }
+        }
         for (const [label, id] of [
           ['feedback_channel', env.DEVBOT_FEEDBACK_CHANNEL_ID],
           ['bugs_forum', env.DEVBOT_FEEDBACK_BUGS_CHANNEL_ID ?? '-'],
